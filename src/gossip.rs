@@ -35,13 +35,11 @@ impl Gossip {
         self.messages.values().map(|v| v.1.clone()).collect()
     }
 
-    #[allow(unused)]
     pub fn inform_or_receive(&mut self, msg: String) {
         let msg_hash = sha3_256(msg.as_bytes());
         let _ = self.messages.entry(msg_hash).or_insert((true, msg));
     }
 
-    #[allow(unused)]
     pub fn get_hot_msg_hash_list(&self) -> BTreeSet<Digest256> {
         self.messages
             .iter()
@@ -50,8 +48,7 @@ impl Gossip {
             .collect()
     }
 
-    #[allow(unused)]
-    /// (already_had_msg_hash_list, you_may_need_msg_hash_list)
+    /// (already_had_msg_hash_list, peer_may_need_msg_hash_list)
     pub fn handle_push(
         &self,
         hot_msg_hash_list: &BTreeSet<Digest256>,
@@ -74,7 +71,6 @@ impl Gossip {
         )
     }
 
-    #[allow(unused)]
     /// (messages_pushed_to_peer, messages_I_need)
     pub fn handle_push_response(
         &mut self,
@@ -100,7 +96,6 @@ impl Gossip {
         )
     }
 
-    #[allow(unused)]
     pub fn handle_pull(&mut self, messages_peer_need: &BTreeSet<Digest256>) -> Vec<String> {
         self.messages
             .iter()

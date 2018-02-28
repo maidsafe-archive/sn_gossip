@@ -18,9 +18,7 @@
 use gossip::Digest256;
 use std::collections::BTreeSet;
 
-/// Messages sent via a direct connection.
-///
-/// Allows routing to directly send specific messages between nodes.
+/// Messages sent via a direct connection, wrapper of gossip protocol rpcs.
 #[derive(Serialize, Deserialize)]
 pub enum Message {
     /// Sent a message from one node to another.
