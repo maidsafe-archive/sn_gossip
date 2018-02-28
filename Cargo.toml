@@ -1,0 +1,24 @@
+[package]
+authors = ["MaidSafe Developers <dev@maidsafe.net>"]
+description = "An implementation of a push-pull gossip protocol."
+homepage = "https://maidsafe.net"
+license = "GPL-3.0"
+name = "safe_gossip"
+readme = "README.md"
+repository = "https://github.com/maidsafe/safe_gossip"
+version = "0.1.0"
+
+[dependencies]
+ed25519-dalek = "~0.6.1"
+futures = "~0.1.18"
+maidsafe_utilities = "~0.15.0"
+quick-error = "~1.2.1"
+rand = "~0.4.2"
+sha3 = "~0.7.2"
+unwrap = "~1.1.0"
+
+[dev-dependencies]
+itertools = "~0.7.6"
+
+[features]
+default = ["ed25519-dalek/serde"]
