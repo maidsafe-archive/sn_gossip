@@ -28,18 +28,63 @@
 #![allow(box_pointers, missing_copy_implementations, missing_debug_implementations,
          variant_size_differences, non_camel_case_types)]
 
+extern crate ed25519_dalek;
+extern crate futures;
+extern crate futures_cpupool;
 extern crate itertools;
 extern crate rand;
 extern crate safe_gossip;
+extern crate tokio;
+// extern crate tokio_io;
 #[macro_use]
 extern crate unwrap;
 
+use ed25519_dalek::PUBLIC_KEY_LENGTH;
+use futures::Future;
+use futures_cpupool::CpuPool;
 use itertools::Itertools;
 use rand::Rng;
 use safe_gossip::{Error, Gossiper};
+use std::collections::HashMap;
+use std::fmt::{self, Debug, Formatter};
+use std::sync::{Arc, Mutex};
+use tokio::net::{TcpListener, TcpStream};
+
+struct Node {
+    _pool: CpuPool,
+    gossiper: Gossiper,
+    peers: HashMap<[u8; PUBLIC_KEY_LENGTH], TcpStream>,
+}
+
+impl Node {
+    fn new(pool: CpuPool) -> Self {
+        Node {
+            _pool: pool,
+            gossiper: Gossiper::default(),
+            peers: HashMap::new(),
+        }
+    }
+
+    fn add_peer(&mut self, id: [u8; PUBLIC_KEY_LENGTH], stream: TcpStream) {
+        assert!(self.peers.insert(id, stream).is_none());
+    }
+
+    // fn start(&mut self) {}
+
+    fn id(&self) -> &[u8; PUBLIC_KEY_LENGTH] {
+        self.gossiper.id()
+    }
+}
+
+impl Debug for Node {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "{:?}", self.gossiper)
+    }
+}
 
 struct Network {
-    nodes: Vec<Gossiper>,
+    _pool: CpuPool,
+    nodes: Vec<Node>,
     // All messages sent in the order they were passed in.  Tuple contains the message and the index
     // of the node used to send.
     messages: Vec<(String, usize)>,
@@ -47,11 +92,36 @@ struct Network {
 
 impl Network {
     fn new(node_count: usize) -> Self {
-        let mut nodes = itertools::repeat_call(Gossiper::default)
+        let pool = CpuPool::new_num_cpus();
+        let mut nodes = itertools::repeat_call(|| Node::new(pool.clone()))
             .take(node_count)
             .collect_vec();
         nodes.sort_by(|lhs, rhs| lhs.id().cmp(rhs.id()));
+
+        // Connect all the nodes.
+        let listening_address = unwrap!("127.0.0.1:0".parse());
+        for i in 0..(nodes.len() - 1) {
+            let listener = unwrap!(TcpListener::bind(&listening_address));
+            let lhs_id = *nodes[i].id();
+            let listener_address = unwrap!(listener.local_addr());
+            let listener = Arc::new(Mutex::new(listener));
+            for j in (i + 1)..nodes.len() {
+                let rhs_id = *nodes[j].id();
+                let rhs_stream = unwrap!(pool.spawn(TcpStream::connect(&listener_address)).wait());
+                nodes[j].add_peer(lhs_id, rhs_stream);
+                let listener = listener.clone();
+                let (lhs_stream, _) = unwrap!(
+                    pool.spawn_fn(move || {
+                        let mut listener = unwrap!(listener.lock());
+                        listener.accept()
+                    }).wait()
+                );
+                nodes[i].add_peer(rhs_id, lhs_stream);
+            }
+        }
+
         Network {
+            _pool: pool,
             nodes,
             messages: vec![],
         }
@@ -59,18 +129,18 @@ impl Network {
 
     /// Send the given `message`.  If `node_index` is `Some` and is less than the number of `Node`s
     /// in the `Network`, then the `Node` at that index will be chosen as the initial informed one.
-    pub fn send(&mut self, message: &str, node_index: Option<usize>) -> Result<(), Error> {
+    fn send(&mut self, message: &str, node_index: Option<usize>) -> Result<(), Error> {
         let count = match node_index {
             Some(index) if index < self.nodes.len() => index,
             _ => rand::thread_rng().gen_range(0, self.nodes.len()),
         };
         self.messages.push((message.to_string(), count));
-        self.nodes[count].send_new(message)
+        self.nodes[count].gossiper.send_new(message)
     }
 }
 
 fn main() {
-    let mut network = Network::new(8);
+    let mut network = Network::new(3);
     println!("Nodes: {:?}", network.nodes);
     unwrap!(network.send("Hello", None));
     unwrap!(network.send("there", Some(999)));

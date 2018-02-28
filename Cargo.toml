@@ -18,7 +18,10 @@ sha3 = "~0.7.2"
 unwrap = "~1.1.0"
 
 [dev-dependencies]
+futures-cpupool = "~0.1.8"
 itertools = "~0.7.6"
+tokio = "~0.1.1"
+tokio-io = "~0.1.5"
 
 [features]
 default = ["ed25519-dalek/serde"]
