@@ -40,10 +40,12 @@ extern crate maidsafe_utilities;
 extern crate quick_error;
 extern crate rand;
 extern crate sha3;
+extern crate tiny_keccak;
 #[macro_use]
 extern crate unwrap;
 
 mod error;
+mod gossip;
 mod gossiper;
 mod node;
 

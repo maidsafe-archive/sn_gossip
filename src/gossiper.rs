@@ -18,6 +18,7 @@
 use ed25519_dalek::{Keypair, PUBLIC_KEY_LENGTH};
 use error::Error;
 use futures::sync::mpsc;
+use gossip::Gossip;
 use maidsafe_utilities::serialisation;
 use rand;
 use sha3::Sha3_512;
@@ -31,7 +32,7 @@ use std::rc::Rc;
 pub struct Gossiper {
     keys: Keypair,
     peers: Rc<RefCell<HashMap<SocketAddr, mpsc::UnboundedSender<String>>>>,
-    messages: Vec<String>,
+    gossip: Gossip,
 }
 
 impl Gossiper {
@@ -44,7 +45,7 @@ impl Gossiper {
     /// called since this `Gossiper` needs to connect to all other nodes in the network before
     /// starting to gossip messages.
     pub fn connect<A: ToSocketAddrs>(&mut self, _address: A) -> Result<(), Error> {
-        if !self.messages.is_empty() {
+        if !self.gossip.get_messages().is_empty() {
             return Err(Error::AlreadyStarted);
         }
         let (_sender, _receiver) = mpsc::unbounded::<String>();
@@ -70,7 +71,7 @@ impl Default for Gossiper {
         Gossiper {
             keys,
             peers: Rc::new(RefCell::new(HashMap::new())),
-            messages: vec![],
+            gossip: Gossip::new(),
         }
     }
 }
