@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use tiny_keccak::sha3_256;
 
 /// SHA3-256 hash digest.
-type Digest256 = [u8; 32];
+pub type Digest256 = [u8; 32];
 
 /// Gossip protocol handler
 pub struct Gossip {

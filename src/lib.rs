@@ -31,7 +31,7 @@
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
 #![allow(box_pointers, missing_copy_implementations, missing_debug_implementations,
-         variant_size_differences, non_camel_case_types)]
+         unused_extern_crates, variant_size_differences, non_camel_case_types)]
 
 extern crate ed25519_dalek;
 extern crate futures;
@@ -39,6 +39,9 @@ extern crate maidsafe_utilities;
 #[macro_use]
 extern crate quick_error;
 extern crate rand;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate sha3;
 extern crate tiny_keccak;
 #[macro_use]
@@ -47,6 +50,7 @@ extern crate unwrap;
 mod error;
 mod gossip;
 mod gossiper;
+mod messages;
 mod node;
 
 pub use error::Error;
