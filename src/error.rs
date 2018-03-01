@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use maidsafe_utilities::serialisation::SerialisationError;
+
 quick_error! {
     /// Gossiper error variants.
     #[derive(Debug)]
@@ -33,6 +35,12 @@ quick_error! {
         Io(error: ::std::io::Error) {
             description(error.description())
             display("I/O error: {}", error)
+            from()
+        }
+        /// Serialisation Error.
+        Serialisation(error: SerialisationError) {
+            description(error.description())
+            display("Serialisation error: {}", error)
             from()
         }
     }

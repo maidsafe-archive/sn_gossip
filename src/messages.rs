@@ -15,24 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use gossip::Digest256;
-use std::collections::BTreeSet;
-
 /// Messages sent via a direct connection, wrapper of gossip protocol rpcs.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Debug, Deserialize)]
 pub enum Message {
-    /// Sent a message from one node to another.
-    Message(String),
-    /// Sent from Node A to Node B to notify a list of hot messages.
-    Push(BTreeSet<Digest256>),
-    /// Sent from Node B to Node A on receiving a push notification.
-    /// Contains the list of message hash that already have,
-    /// and the list of message hash that node B thinks node A may needed.
-    PushResponse {
-        already_had_msg_hash_list: BTreeSet<Digest256>,
-        peer_may_need_msg_hash_list: BTreeSet<Digest256>,
-    },
-    /// Sent from Node A to Node B on receiving a PushResponse.
-    /// Contains the list of hash that node A wants to fetch messages from node B.
-    Pull(BTreeSet<Digest256>),
+    /// Sent from Node A to Node B to push a message and its counter.
+    Push(u8, String),
+    /// Node A pull fom Node B.
+    Pull,
 }

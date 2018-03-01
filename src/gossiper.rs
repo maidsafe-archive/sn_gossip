@@ -19,7 +19,7 @@ use ed25519_dalek::Keypair;
 use error::Error;
 use gossip::Gossip;
 use id::Id;
-use maidsafe_utilities::serialisation;
+use maidsafe_utilities::serialisation::{self, SerialisationError};
 use messages::Message;
 use rand::{self, Rng};
 use sha3::Sha3_512;
@@ -33,18 +33,12 @@ pub struct Gossiper {
 }
 
 // Push & Pull procedure is defined as:
-//      * Node A randomly picks a node B and sends its hot_msg_hash_list to B.
-//      * When B received that list, it responds with msg_had_hash_list (containing those message
-//        hashes that B already had but be listed in the hot_msg_hash_list) and
-//        msg_peer_may_need_hash_list (containing those message hashes that B had in its
-//        hot_message_list but not listed in the hot_msg_hash_list).
-//      * When A received msg_had_hash_list, it removes those messages from the hot_message_list,
-//        and send all the remaining hot messages to node B.
-//      * When A received msg_peer_may_need_hash_list, it responds to B with msg_I_need_hash_list,
-//        which contains the message hashes that A doesn’t have but listed in the
-//        msg_peer_may_need_hash_list.
-//      * When B received a message from A, it put it as hot.
-//      * When B received msg_I_need_hash_list from A, it sends the requested messages to A.
+//      * Node A randomly picks a node B and sends hot_messages and a pull request to B.
+//      * When B received the pull request, it sends back its hot_messages + cold_messages
+// hot_message is definded as `message_counter <= ln(N)`
+// cold_message is defined as `ln(N) < message_counter <= 2ln(N)`
+// message_counter got increased each time there is a push_tick.
+// when `message_counter > 2ln(N)`, the message is no longer get pushed or pulled to another node.
 
 impl Gossiper {
     /// The ID of this `Gossiper`, i.e. its public key.
@@ -60,27 +54,48 @@ impl Gossiper {
             return Err(Error::AlreadyStarted);
         }
         let _ = self.peers.push(peer_id);
+        self.gossip.add_peer();
         Ok(())
     }
 
     /// Send a new message starting at this `Gossiper`.
-    pub fn send_new(&mut self, message: &str) -> Result<(Id, Vec<u8>), Error> {
+    pub fn send_new(&mut self, message: &str) -> Result<(Id, Vec<Vec<u8>>), Error> {
         if self.peers.is_empty() {
             return Err(Error::NoPeers);
         }
-        self.gossip.inform_or_receive(message.to_string());
-        Ok(self.push_tick())
+        self.gossip.inform(message.to_string());
+        self.push_tick()
     }
 
     /// Start a push round.
-    pub fn push_tick(&self) -> (Id, Vec<u8>) {
-        let peer_id = *unwrap!(rand::thread_rng().choose(&self.peers));
-        let push_list = self.gossip.get_hot_msg_hash_list();
-        println!("{:?} Sending push_list to {:?}", self, peer_id);
-        (
-            peer_id,
-            unwrap!(serialisation::serialise(&Message::Push(push_list))),
-        )
+    pub fn push_tick(&mut self) -> Result<(Id, Vec<Vec<u8>>), Error> {
+        let peer_id = match rand::thread_rng().choose(&self.peers) {
+            Some(id) => *id,
+            None => return Err(Error::NoPeers),
+        };
+        let push_list = self.gossip.get_push_list();
+        let mut messages = Vec::new();
+        for (count, msg) in push_list {
+            let message = Message::Push(count, msg);
+            if let Ok(str) = serialisation::serialise(&message) {
+                messages.push(str);
+            } else {
+                println!("Failed to serialise {:?}", message);
+            }
+        }
+        if let Ok(str) = self.pull_tick() {
+            messages.push(str);
+        } else {
+            println!("Failed to serialise Pull request");
+        }
+
+        println!("{:?} Sending messages and pull to {:?}", self, peer_id);
+        Ok((peer_id, messages))
+    }
+
+    /// Start a pull round.
+    pub fn pull_tick(&self) -> Result<Vec<u8>, SerialisationError> {
+        serialisation::serialise(&Message::Pull)
     }
 
     /// Handles an incoming message from peer.
@@ -91,57 +106,22 @@ impl Gossiper {
             message.len(),
             peer_id
         );
-        let msg = unwrap!(serialisation::deserialise::<Message>(message));
+        let msg = if let Ok(msg) = serialisation::deserialise::<Message>(message) {
+            msg
+        } else {
+            println!("Failed to deserialise message");
+            return Vec::new();
+        };
         let mut response = vec![];
         match msg {
-            Message::Message(msg) => self.gossip.inform_or_receive(msg),
-            Message::Push(hash_list) => {
-                let (already_had_msg_hash_list, peer_may_need_msg_hash_list) =
-                    self.gossip.handle_push(&hash_list);
-                println!(
-                    "{:?} sending (already_had_msg_hash_list, peer_may_need_msg_hash_list) \
-                          ({:?}, {:?}) to {:?}",
-                    self,
-                    already_had_msg_hash_list,
-                    peer_may_need_msg_hash_list,
-                    peer_id
-                );
-                response.push(unwrap!(serialisation::serialise(&Message::PushResponse {
-                    already_had_msg_hash_list,
-                    peer_may_need_msg_hash_list,
-                })));
-            }
-            Message::PushResponse {
-                already_had_msg_hash_list,
-                peer_may_need_msg_hash_list,
-            } => {
-                let (messages_pushed_to_peer, messages_i_need) = self.gossip.handle_push_response(
-                    &already_had_msg_hash_list,
-                    &peer_may_need_msg_hash_list,
-                );
-                for message in messages_pushed_to_peer {
-                    println!("{:?} Sending message: {:?} to {:?}", self, message, peer_id);
-                    response.push(unwrap!(
-                        serialisation::serialise(&Message::Message(message))
-                    ));
-                }
-                println!(
-                    "{:?} Sending messages_i_need: {:?} to {:?}",
-                    self,
-                    messages_i_need,
-                    peer_id
-                );
-                response.push(unwrap!(
-                    serialisation::serialise(&Message::Pull(messages_i_need))
-                ));
-            }
-            Message::Pull(hash_list) => {
-                let messages_pushed_to_peer = self.gossip.handle_pull(&hash_list);
-                for message in messages_pushed_to_peer {
-                    println!("{:?} Sending message: {:?} to {:?}", self, message, peer_id);
-                    response.push(unwrap!(
-                        serialisation::serialise(&Message::Message(message))
-                    ));
+            Message::Push(count, msg) => self.gossip.receive(count, msg),
+            Message::Pull => {
+                let messages_pushed_to_peer = self.gossip.handle_pull();
+                for (count, msg) in messages_pushed_to_peer {
+                    println!("{:?} Sending message: {:?} to {:?}", self, msg, peer_id);
+                    if let Ok(str) = serialisation::serialise(&Message::Push(count, msg)) {
+                        response.push(str);
+                    }
                 }
             }
         }

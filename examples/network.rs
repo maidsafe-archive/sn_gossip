@@ -111,7 +111,6 @@ fn process(
                 unwrap!(gossiper.lock()).handle_received_message(&their_id, &buffer[0..size]);
             for response in &responses {
                 let _ = tcp_stream.write_all(response);
-                // let _ = stream.flush();
             }
         }
         Ok(())
@@ -167,8 +166,10 @@ impl Network {
         let response = unwrap!(self.nodes[count].gossiper.lock()).send_new(message);
         response.and_then(|(peer_id, to_send)| {
             let stream = unwrap!(self.nodes[count].peers.get_mut(&peer_id));
-            unwrap!(unwrap!(stream.lock()).write_all(&to_send));
-            println!("{:?} Sent message to {:?}", sender_id, peer_id);
+            for msg in to_send {
+                unwrap!(unwrap!(stream.lock()).write_all(&msg));
+            }
+            println!("{:?} Sent messages to {:?}", sender_id, peer_id);
             Ok(())
         })
     }

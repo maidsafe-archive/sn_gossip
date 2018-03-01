@@ -44,8 +44,6 @@ extern crate serde;
 extern crate serde_derive;
 extern crate sha3;
 extern crate tiny_keccak;
-#[macro_use]
-extern crate unwrap;
 
 mod error;
 mod gossip;
