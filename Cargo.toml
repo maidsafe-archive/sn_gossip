@@ -9,6 +9,7 @@ repository = "https://github.com/maidsafe/safe_gossip"
 version = "0.1.0"
 
 [dependencies]
+bytes = "~0.4.6"
 ed25519-dalek = "~0.6.1"
 futures = "~0.1.18"
 maidsafe_utilities = "~0.15.0"

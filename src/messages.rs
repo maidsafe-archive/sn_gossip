@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 #[derive(Serialize, Deserialize)]
 pub enum Message {
     /// Sent a message from one node to another.
-    Message(String),
+    Message(Vec<u8>),
     /// Sent from Node A to Node B to notify a list of hot messages.
     Push(BTreeSet<Digest256>),
     /// Sent from Node B to Node A on receiving a push notification.

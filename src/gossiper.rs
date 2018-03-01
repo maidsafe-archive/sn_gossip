@@ -22,8 +22,10 @@ use id::Id;
 use maidsafe_utilities::serialisation;
 use messages::Message;
 use rand::{self, Rng};
+use serde::ser::Serialize;
 use sha3::Sha3_512;
 use std::fmt::{self, Debug, Formatter};
+use std::thread;
 
 /// An entity on the network which will gossip messages.
 pub struct Gossiper {
@@ -59,16 +61,18 @@ impl Gossiper {
         if !self.gossip.get_messages().is_empty() {
             return Err(Error::AlreadyStarted);
         }
-        let _ = self.peers.push(peer_id);
+        self.peers.push(peer_id);
         Ok(())
     }
 
     /// Send a new message starting at this `Gossiper`.
-    pub fn send_new(&mut self, message: &str) -> Result<(Id, Vec<u8>), Error> {
+    pub fn send_new<T: Serialize>(&mut self, message: &T) -> Result<(Id, Vec<u8>), Error> {
         if self.peers.is_empty() {
             return Err(Error::NoPeers);
         }
-        self.gossip.inform_or_receive(message.to_string());
+        self.gossip.inform_or_receive(
+            serialisation::serialise(message)?,
+        );
         Ok(self.push_tick())
     }
 
@@ -76,7 +80,12 @@ impl Gossiper {
     pub fn push_tick(&self) -> (Id, Vec<u8>) {
         let peer_id = *unwrap!(rand::thread_rng().choose(&self.peers));
         let push_list = self.gossip.get_hot_msg_hash_list();
-        println!("{:?} Sending push_list to {:?}", self, peer_id);
+        println!(
+            "{:?} - {:?} Sending push_list to {:?}",
+            thread::current().id(),
+            self,
+            peer_id
+        );
         (
             peer_id,
             unwrap!(serialisation::serialise(&Message::Push(push_list))),
@@ -86,7 +95,8 @@ impl Gossiper {
     /// Handles an incoming message from peer.
     pub fn handle_received_message(&mut self, peer_id: &Id, message: &[u8]) -> Vec<Vec<u8>> {
         println!(
-            "{:?} handling message of {} bytes from {:?}",
+            "{:?} - {:?} handling message of {} bytes from {:?}",
+            thread::current().id(),
             self,
             message.len(),
             peer_id
@@ -99,8 +109,9 @@ impl Gossiper {
                 let (already_had_msg_hash_list, peer_may_need_msg_hash_list) =
                     self.gossip.handle_push(&hash_list);
                 println!(
-                    "{:?} sending (already_had_msg_hash_list, peer_may_need_msg_hash_list) \
+                    "{:?} - {:?} sending (already_had_msg_hash_list, peer_may_need_msg_hash_list) \
                           ({:?}, {:?}) to {:?}",
+                    thread::current().id(),
                     self,
                     already_had_msg_hash_list,
                     peer_may_need_msg_hash_list,
@@ -120,25 +131,37 @@ impl Gossiper {
                     &peer_may_need_msg_hash_list,
                 );
                 for message in messages_pushed_to_peer {
-                    println!("{:?} Sending message: {:?} to {:?}", self, message, peer_id);
+                    println!(
+                        "{:?} - {:?} Sending message: {:?} to {:?}",
+                        thread::current().id(),
+                        self,
+                        message,
+                        peer_id
+                    );
                     response.push(unwrap!(
                         serialisation::serialise(&Message::Message(message))
                     ));
                 }
+                let mmm = unwrap!(serialisation::serialise(&Message::Pull(messages_i_need)));
                 println!(
-                    "{:?} Sending messages_i_need: {:?} to {:?}",
+                    "{:?} - {:?} Sending messages_i_need of {} bytes to {:?}",
+                    thread::current().id(),
                     self,
-                    messages_i_need,
+                    mmm.len(),
                     peer_id
                 );
-                response.push(unwrap!(
-                    serialisation::serialise(&Message::Pull(messages_i_need))
-                ));
+                response.push(mmm);
             }
             Message::Pull(hash_list) => {
                 let messages_pushed_to_peer = self.gossip.handle_pull(&hash_list);
                 for message in messages_pushed_to_peer {
-                    println!("{:?} Sending message: {:?} to {:?}", self, message, peer_id);
+                    println!(
+                        "{:?} - {:?} Sending message: {:?} to {:?}",
+                        thread::current().id(),
+                        self,
+                        message,
+                        peer_id
+                    );
                     response.push(unwrap!(
                         serialisation::serialise(&Message::Message(message))
                     ));

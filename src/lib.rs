@@ -52,7 +52,6 @@ mod gossip;
 mod gossiper;
 mod id;
 mod messages;
-mod node;
 
 pub use error::Error;
 pub use gossiper::Gossiper;
