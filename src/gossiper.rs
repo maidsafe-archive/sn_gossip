@@ -15,24 +15,20 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use ed25519_dalek::{Keypair, PUBLIC_KEY_LENGTH, PublicKey};
+use ed25519_dalek::Keypair;
 use error::Error;
-use futures::sync::mpsc;
 use gossip::Gossip;
+use id::Id;
 use maidsafe_utilities::serialisation;
 use messages::Message;
-use rand;
+use rand::{self, Rng};
 use sha3::Sha3_512;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::rc::Rc;
 
 /// An entity on the network which will gossip messages.
 pub struct Gossiper {
     keys: Keypair,
-    peers: Rc<RefCell<HashMap<SocketAddr, mpsc::UnboundedSender<String>>>>,
+    peers: Vec<Id>,
     gossip: Gossip,
 }
 
@@ -52,41 +48,51 @@ pub struct Gossiper {
 
 impl Gossiper {
     /// The ID of this `Gossiper`, i.e. its public key.
-    pub fn id(&self) -> &[u8; PUBLIC_KEY_LENGTH] {
-        self.keys.public.as_bytes()
+    pub fn id(&self) -> Id {
+        self.keys.public.into()
     }
 
-    /// Connect to another node on the network.  This will fail if `send_new()` has already been
-    /// called since this `Gossiper` needs to connect to all other nodes in the network before
+    /// Add the ID of another node on the network.  This will fail if `send_new()` has already been
+    /// called since this `Gossiper` needs to know about all other nodes in the network before
     /// starting to gossip messages.
-    pub fn connect<A: ToSocketAddrs>(&mut self, _address: A) -> Result<(), Error> {
+    pub fn add_peer(&mut self, peer_id: Id) -> Result<(), Error> {
         if !self.gossip.get_messages().is_empty() {
             return Err(Error::AlreadyStarted);
         }
-        let (_sender, _receiver) = mpsc::unbounded::<String>();
-        // self.peers.borrow_mut().insert(addr, sender);
+        let _ = self.peers.push(peer_id);
         Ok(())
     }
 
     /// Send a new message starting at this `Gossiper`.
-    pub fn send_new(&mut self, message: &str) -> Result<(), Error> {
-        if self.peers.borrow().is_empty() {
+    pub fn send_new(&mut self, message: &str) -> Result<(Id, Vec<u8>), Error> {
+        if self.peers.is_empty() {
             return Err(Error::NoPeers);
         }
         self.gossip.inform_or_receive(message.to_string());
-        self.push_tick();
-        Ok(())
+        Ok(self.push_tick())
     }
 
     /// Start a push round.
-    pub fn push_tick(&self) {
+    pub fn push_tick(&self) -> (Id, Vec<u8>) {
+        let peer_id = *unwrap!(rand::thread_rng().choose(&self.peers));
         let push_list = self.gossip.get_hot_msg_hash_list();
-        println!("{:?} Sending push_list: {:?}", self, push_list);
-        let _serialised = unwrap!(serialisation::serialise(&Message::Push(push_list)));
+        println!("{:?} Sending push_list to {:?}", self, peer_id);
+        (
+            peer_id,
+            unwrap!(serialisation::serialise(&Message::Push(push_list))),
+        )
     }
 
     /// Handles an incoming message from peer.
-    pub fn handle_received_message(&mut self, peer: &PublicKey, msg: Message) {
+    pub fn handle_received_message(&mut self, peer_id: &Id, message: &[u8]) -> Vec<Vec<u8>> {
+        println!(
+            "{:?} handling message of {} bytes from {:?}",
+            self,
+            message.len(),
+            peer_id
+        );
+        let msg = unwrap!(serialisation::deserialise::<Message>(message));
+        let mut response = vec![];
         match msg {
             Message::Message(msg) => self.gossip.inform_or_receive(msg),
             Message::Push(hash_list) => {
@@ -98,12 +104,12 @@ impl Gossiper {
                     self,
                     already_had_msg_hash_list,
                     peer_may_need_msg_hash_list,
-                    peer
+                    peer_id
                 );
-                let _serialised = unwrap!(serialisation::serialise(&Message::PushResponse {
-                    already_had_msg_hash_list: already_had_msg_hash_list,
-                    peer_may_need_msg_hash_list: peer_may_need_msg_hash_list,
-                }));
+                response.push(unwrap!(serialisation::serialise(&Message::PushResponse {
+                    already_had_msg_hash_list,
+                    peer_may_need_msg_hash_list,
+                })));
             }
             Message::PushResponse {
                 already_had_msg_hash_list,
@@ -114,26 +120,32 @@ impl Gossiper {
                     &peer_may_need_msg_hash_list,
                 );
                 for message in messages_pushed_to_peer {
-                    println!("{:?} Sending message: {:?} to {:?}", self, message, peer);
-                    let _serialised = unwrap!(serialisation::serialise(&Message::Message(message)));
+                    println!("{:?} Sending message: {:?} to {:?}", self, message, peer_id);
+                    response.push(unwrap!(
+                        serialisation::serialise(&Message::Message(message))
+                    ));
                 }
                 println!(
                     "{:?} Sending messages_i_need: {:?} to {:?}",
                     self,
                     messages_i_need,
-                    peer
+                    peer_id
                 );
-                let _serialised =
-                    unwrap!(serialisation::serialise(&Message::Pull(messages_i_need)));
+                response.push(unwrap!(
+                    serialisation::serialise(&Message::Pull(messages_i_need))
+                ));
             }
             Message::Pull(hash_list) => {
                 let messages_pushed_to_peer = self.gossip.handle_pull(&hash_list);
                 for message in messages_pushed_to_peer {
-                    println!("{:?} Sending message: {:?} to {:?}", self, message, peer);
-                    let _serialised = unwrap!(serialisation::serialise(&Message::Message(message)));
+                    println!("{:?} Sending message: {:?} to {:?}", self, message, peer_id);
+                    response.push(unwrap!(
+                        serialisation::serialise(&Message::Message(message))
+                    ));
                 }
             }
         }
+        response
     }
 }
 
@@ -143,7 +155,7 @@ impl Default for Gossiper {
         let keys = Keypair::generate::<Sha3_512>(&mut rng);
         Gossiper {
             keys,
-            peers: Rc::new(RefCell::new(HashMap::new())),
+            peers: vec![],
             gossip: Gossip::new(),
         }
     }
@@ -151,12 +163,6 @@ impl Default for Gossiper {
 
 impl Debug for Gossiper {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "{:02x}{:02x}{:02x}..",
-            self.id()[0],
-            self.id()[1],
-            self.id()[2]
-        )
+        write!(formatter, "{:?}", self.id())
     }
 }
