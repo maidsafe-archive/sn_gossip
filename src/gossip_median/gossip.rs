@@ -44,7 +44,7 @@ impl Gossip {
         self.total_peers += 1;
         let f = self.total_peers as f64;
         self.hot_rounds = cmp::max(1, f.ln() as u8);
-        self.cold_rounds = cmp::max(2, 2 * self.hot_rounds);
+        self.cold_rounds = cmp::max(3, 3 * self.hot_rounds);
     }
 
     pub fn get_messages(&self) -> Vec<String> {

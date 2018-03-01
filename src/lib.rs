@@ -35,6 +35,8 @@
 
 extern crate ed25519_dalek;
 extern crate futures;
+#[cfg(test)]
+extern crate itertools;
 extern crate maidsafe_utilities;
 #[macro_use]
 extern crate quick_error;
@@ -44,14 +46,16 @@ extern crate serde;
 extern crate serde_derive;
 extern crate sha3;
 extern crate tiny_keccak;
+#[cfg(test)]
+#[macro_use]
+#[cfg(test)]
+extern crate unwrap;
 
 mod error;
-mod gossip;
-mod gossiper;
+mod gossip_median;
 mod id;
-mod messages;
 mod node;
 
 pub use error::Error;
-pub use gossiper::Gossiper;
+pub use gossip_median::gossiper::Gossiper;
 pub use id::Id;
