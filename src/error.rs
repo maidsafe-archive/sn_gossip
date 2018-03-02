@@ -31,6 +31,11 @@ quick_error! {
             description("Already started gossiping")
             display("Connections to all other nodes must be made before sending any messages.")
         }
+        /// Failed in verify signature.
+        SigFailure {
+            description("Signature cannot be verified")
+            display("The message or signature might be corrupted, or the signer is wrong.")
+        }
         /// IO error.
         Io(error: ::std::io::Error) {
             description(error.description())
