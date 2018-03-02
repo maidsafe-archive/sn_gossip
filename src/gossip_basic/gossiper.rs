@@ -122,8 +122,8 @@ impl Gossiper {
                 let (already_had_msg_hash_list, peer_may_need_msg_hash_list) =
                     self.gossip.handle_push(&hash_list);
                 // println!(
-                //     "{:?} - {:?} sending (already_had_msg_hash_list, peer_may_need_msg_hash_list) \
-                //           ({:?}, {:?}) to {:?}",
+                //     "{:?} - {:?} sending (already_had_msg_hash_list, \
+                //      peer_may_need_msg_hash_list)  ({:?}, {:?}) to {:?}",
                 //     thread::current().id(),
                 //     self,
                 //     already_had_msg_hash_list,
@@ -133,7 +133,8 @@ impl Gossiper {
                 if let Ok(str) = serialisation::serialise(&Message::PushResponse {
                     already_had_msg_hash_list,
                     peer_may_need_msg_hash_list,
-                }) {
+                })
+                {
                     response.push(str);
                 }
             }
@@ -164,7 +165,7 @@ impl Gossiper {
                         self,
                         str.len(),
                         peer_id
-                    );                        
+                    );
                     response.push(str);
                 }
             }

@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#![allow(dead_code)]
 
 use super::gossip::Gossip;
 use super::messages::Message;
@@ -27,6 +28,7 @@ use serde::ser::Serialize;
 use sha3::Sha3_512;
 use std::fmt::{self, Debug, Formatter};
 
+#[allow(unused)]
 /// An entity on the network which will gossip messages.
 pub struct Gossiper {
     keys: Keypair,

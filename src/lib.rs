@@ -58,5 +58,5 @@ mod gossip_median_with_round;
 mod id;
 
 pub use error::Error;
-pub use gossip_median::gossiper::Gossiper;
+pub use gossip_median_with_round::gossiper::{Gossiper, Statistics};
 pub use id::Id;
