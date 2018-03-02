@@ -167,6 +167,8 @@ struct Node {
     channel_receiver: mpsc::UnboundedReceiver<String>,
     /// Map of peer ID to the wrapped TCP stream connecting us to them.
     peers: HashMap<Id, MessageStream>,
+    /// Indicates whether is in a push&pull round
+    is_in_round: bool,
 }
 
 impl Node {
@@ -175,6 +177,7 @@ impl Node {
             gossiper: Gossiper::default(),
             channel_receiver,
             peers: HashMap::new(),
+            is_in_round: false,
         }
     }
 
@@ -194,17 +197,29 @@ impl Node {
     /// Receive all new messages from the `Network` object.
     fn receive_from_channel(&mut self) {
         while let Async::Ready(Some(message)) = unwrap!(self.channel_receiver.poll()) {
-            let (peer_id, msg_to_send) = unwrap!(self.gossiper.send_new(&message));
-            println!(
-                "{:?} - {:?} About to send message of {} bytes to {:?}",
-                thread::current().id(),
-                self,
-                msg_to_send.len(),
-                peer_id
-            );
-            // Buffer the message to be sent.
+            let _ = unwrap!(self.gossiper.send_new(&message));
+        }
+    }
+
+    /// Triggers a new push round
+    fn tick(&mut self) {
+        if !self.is_in_round {
+            self.is_in_round = true;
+            let id = self.id();
+
+            let (peer_id, msgs_to_send) = unwrap!(self.gossiper.push_tick());
             let message_stream = unwrap!(self.peers.get_mut(&peer_id));
-            message_stream.buffer(&msg_to_send);
+            // Buffer the messages to be sent.
+            for msg in msgs_to_send {
+                println!(
+                    "{:?} - {:?} About to send message of {} bytes to {:?}",
+                    thread::current().id(),
+                    id,
+                    msg.len(),
+                    peer_id
+                );
+                message_stream.buffer(&msg);
+            }
         }
     }
 
@@ -212,6 +227,7 @@ impl Node {
     /// have disconnected.
     fn receive_from_peers(&mut self) {
         let mut disconnected_peers = vec![];
+        let mut has_response = false;
         for (peer_id, ref mut message_stream) in &mut self.peers {
             loop {
                 match message_stream.poll() {
@@ -219,6 +235,7 @@ impl Node {
                         let msgs_to_send = self.gossiper.handle_received_message(peer_id, &message);
                         // Buffer the messages to be sent back.
                         for msg in msgs_to_send {
+                            has_response = true;
                             message_stream.buffer(&msg);
                         }
                     }
@@ -238,6 +255,7 @@ impl Node {
         for disconnected_peer in disconnected_peers {
             let _ = unwrap!(self.peers.remove(&disconnected_peer));
         }
+        self.is_in_round = has_response;
     }
 
     /// Iterate the peers flushing the write buffers to the TCP streams.  Removes any peers that
@@ -263,6 +281,7 @@ impl Future for Node {
     fn poll(&mut self) -> Poll<(), Error> {
         self.receive_from_channel();
         self.receive_from_peers();
+        self.tick();
         self.send_to_peers();
         // If we have no peers left, there is nothing more for this node to do.
         if self.peers.is_empty() {

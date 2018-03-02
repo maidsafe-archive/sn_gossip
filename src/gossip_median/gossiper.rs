@@ -23,6 +23,7 @@ use error::Error;
 use id::Id;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
 use rand::{self, Rng};
+use serde::ser::Serialize;
 use sha3::Sha3_512;
 use std::fmt::{self, Debug, Formatter};
 
@@ -60,13 +61,12 @@ impl Gossiper {
     }
 
     /// Send a new message starting at this `Gossiper`.
-    pub fn send_new(&mut self, message: &str) -> Result<(Id, Vec<Vec<u8>>), Error> {
+    pub fn send_new<T: Serialize>(&mut self, message: &T) -> Result<(), Error> {
         if self.peers.is_empty() {
             return Err(Error::NoPeers);
         }
-        self.gossip.inform(message.to_string());
-        return Err(Error::NoPeers);
-        // self.push_tick()
+        self.gossip.inform(serialisation::serialise(message)?);
+        Ok(())
     }
 
     /// Start a push round.
@@ -131,7 +131,7 @@ impl Gossiper {
     }
 
     #[cfg(test)]
-    pub fn get_messages(&self) -> Vec<String> {
+    pub fn get_messages(&self) -> Vec<Vec<u8>> {
         self.gossip.get_messages()
     }
 }

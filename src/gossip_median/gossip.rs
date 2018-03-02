@@ -24,7 +24,7 @@ pub type Digest256 = [u8; 32];
 
 /// Gossip protocol handler
 pub struct Gossip {
-    messages: BTreeMap<Digest256, (u8, String)>,
+    messages: BTreeMap<Digest256, (u8, Vec<u8>)>,
     total_peers: u64,
     hot_rounds: u8,
     cold_rounds: u8,
@@ -47,25 +47,25 @@ impl Gossip {
         self.cold_rounds = cmp::max(3, 3 * self.hot_rounds);
     }
 
-    pub fn get_messages(&self) -> Vec<String> {
+    pub fn get_messages(&self) -> Vec<Vec<u8>> {
         self.messages.values().map(|v| v.1.clone()).collect()
     }
 
-    pub fn inform(&mut self, msg: String) {
-        let msg_hash = sha3_256(msg.as_bytes());
+    pub fn inform(&mut self, msg: Vec<u8>) {
+        let msg_hash = sha3_256(&msg);
         let _ = self.messages.entry(msg_hash).or_insert((0, msg));
     }
 
-    pub fn receive(&mut self, count: u8, msg: String) {
-        let msg_hash = sha3_256(msg.as_bytes());
+    pub fn receive(&mut self, count: u8, msg: Vec<u8>) {
+        let msg_hash = sha3_256(&msg);
         let entry = self.messages.entry(msg_hash).or_insert((count, msg));
         if entry.0 < count {
             entry.0 = count;
         }
     }
 
-    pub fn get_push_list(&mut self) -> Vec<(u8, String)> {
-        let push_list: Vec<(u8, String)> = self.messages
+    pub fn get_push_list(&mut self) -> Vec<(u8, Vec<u8>)> {
+        let push_list: Vec<(u8, Vec<u8>)> = self.messages
             .iter()
             .filter_map(|(_k, v)| if v.0 <= self.hot_rounds {
                 Some(v)
@@ -82,12 +82,10 @@ impl Gossip {
         push_list
     }
 
-    pub fn handle_pull(&self) -> Vec<(u8, String)> {
+    pub fn handle_pull(&self) -> Vec<(u8, Vec<u8>)> {
         self.messages
             .iter()
-            .filter_map(|(_k, v)| if v.0 > self.hot_rounds &&
-                v.0 <= self.cold_rounds
-            {
+            .filter_map(|(_k, v)| if v.0 <= self.cold_rounds {
                 Some(v)
             } else {
                 None

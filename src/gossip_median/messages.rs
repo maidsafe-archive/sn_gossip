@@ -19,7 +19,7 @@
 #[derive(Serialize, Debug, Deserialize)]
 pub enum Message {
     /// Sent from Node A to Node B to push a message and its counter.
-    Push(u8, String),
+    Push(u8, Vec<u8>),
     /// Node A pull fom Node B.
     Pull,
 }

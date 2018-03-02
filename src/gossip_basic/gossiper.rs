@@ -70,15 +70,14 @@ impl Gossiper {
     }
 
     /// Send a new message starting at this `Gossiper`.
-    pub fn send_new<T: Serialize>(&mut self, message: &T) -> Result<(Id, Vec<u8>), Error> {
+    pub fn send_new<T: Serialize>(&mut self, message: &T) -> Result<(), Error> {
         if self.peers.is_empty() {
             return Err(Error::NoPeers);
         }
         self.gossip.inform_or_receive(
             serialisation::serialise(message)?,
         );
-        return Err(Error::NoPeers);
-        // Ok(self.push_tick())
+        Ok(())
     }
 
     /// Start a push round.
