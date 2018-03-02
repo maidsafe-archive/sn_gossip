@@ -43,13 +43,13 @@ extern crate tokio_io;
 extern crate unwrap;
 
 use bytes::{BufMut, BytesMut};
-use futures::{Async, Future, Poll};
-use futures::stream::Stream;
+use futures::{Async, Future, Poll, Stream};
 use futures::sync::mpsc;
 use futures_cpupool::{CpuFuture, CpuPool};
+use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use rand::Rng;
-use safe_gossip::{Error, Gossiper, Id};
+use safe_gossip::{Error, Gossiper, Id, Statistics};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
@@ -165,19 +165,30 @@ struct Node {
     gossiper: Gossiper,
     /// This receives new messages from the `Network` object; equivalent to e.g. a new client event.
     channel_receiver: mpsc::UnboundedReceiver<String>,
+    /// This can be used to send the received client messages and `Gossiper`'s stats to the
+    /// `Network` object.
+    stats_sender: mpsc::UnboundedSender<(Id, Vec<String>, Statistics)>,
     /// Map of peer ID to the wrapped TCP stream connecting us to them.
     peers: HashMap<Id, MessageStream>,
     /// Indicates whether is in a push&pull round
     is_in_round: bool,
+    /// If a message is received via `channel_sender` matches this, the node should terminate.
+    termination_message: String,
 }
 
 impl Node {
-    fn new(channel_receiver: mpsc::UnboundedReceiver<String>) -> Self {
+    fn new(
+        channel_receiver: mpsc::UnboundedReceiver<String>,
+        stats_sender: mpsc::UnboundedSender<(Id, Vec<String>, Statistics)>,
+        termination_message: String,
+    ) -> Self {
         Node {
             gossiper: Gossiper::default(),
             channel_receiver,
+            stats_sender,
             peers: HashMap::new(),
             is_in_round: false,
+            termination_message,
         }
     }
 
@@ -194,31 +205,29 @@ impl Node {
         self.gossiper.id()
     }
 
-    /// Receive all new messages from the `Network` object.
-    fn receive_from_channel(&mut self) {
+    /// Receive all new messages from the `Network` object.  If we receive the termination message,
+    /// immediately return `false`, otherwise return `true`.
+    fn receive_from_channel(&mut self) -> bool {
         while let Async::Ready(Some(message)) = unwrap!(self.channel_receiver.poll()) {
+            if message == self.termination_message {
+                return false;
+            }
             unwrap!(self.gossiper.send_new(&message));
         }
+        true
     }
 
     /// Triggers a new push round
     fn tick(&mut self) {
         if !self.is_in_round {
             self.is_in_round = true;
-            let id = self.id();
 
             let (peer_id, msgs_to_send) = unwrap!(self.gossiper.push_tick());
-            let message_stream = unwrap!(self.peers.get_mut(&peer_id));
-            // Buffer the messages to be sent.
-            for msg in msgs_to_send {
-                println!(
-                    "{:?} - {:?} About to send message of {} bytes to {:?}",
-                    thread::current().id(),
-                    id,
-                    msg.len(),
-                    peer_id
-                );
-                message_stream.buffer(&msg);
+            if let Some(message_stream) = self.peers.get_mut(&peer_id) {
+                // Buffer the messages to be sent.
+                for msg in msgs_to_send {
+                    message_stream.buffer(&msg);
+                }
             }
         }
     }
@@ -242,6 +251,7 @@ impl Node {
                     Ok(Async::Ready(None)) => {
                         // EOF was reached; the remote peer has disconnected.
                         disconnected_peers.push(*peer_id);
+                        break;
                     }
                     Ok(Async::NotReady) => break,
                     Err(error) => {
@@ -279,10 +289,23 @@ impl Future for Node {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<(), Error> {
-        self.receive_from_channel();
+        if !self.receive_from_channel() {
+            return Ok(Async::Ready(()));
+        }
         self.receive_from_peers();
         self.tick();
         self.send_to_peers();
+        let stats = self.gossiper.statistics();
+        let messages = self.gossiper
+            .messages()
+            .into_iter()
+            .map(|serialised| {
+                unwrap!(serialisation::deserialise::<String>(&serialised))
+            })
+            .collect_vec();
+        let id = self.id();
+        unwrap!(self.stats_sender.unbounded_send((id, messages, stats)));
+
         // If we have no peers left, there is nothing more for this node to do.
         if self.peers.is_empty() {
             return Ok(Async::Ready(()));
@@ -293,7 +316,7 @@ impl Future for Node {
 
 impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "{:?}", self.id())
+        write!(formatter, "{:?} - {:?}", thread::current().id(), self.id())
     }
 }
 
@@ -301,31 +324,52 @@ impl Debug for Node {
 
 struct Network {
     pool: CpuPool,
-    channels_to_nodes: Vec<mpsc::UnboundedSender<String>>,
+    // An mpsc channel sender for each node for giving new client messages to that node.
+    message_senders: Vec<mpsc::UnboundedSender<String>>,
+    // An mpsc channel receiver for getting the client messages and stats from the nodes.
+    stats_receiver: mpsc::UnboundedReceiver<(Id, Vec<String>, Statistics)>,
+    // The last set of client messages received via `stats_receiver` for each node.
+    received_messages: HashMap<Id, Vec<String>>,
+    // The last set of stats received via `stats_receiver` for each node.
+    stats: HashMap<Id, Statistics>,
+    // The futures for all nodes.  When these return ready, that node has finished running.
     node_futures: Vec<CpuFuture<(), Error>>,
     // All messages sent in the order they were passed in.  Tuple contains the message and the index
     // of the node used to send.
-    messages: Vec<(String, usize)>,
+    client_messages: Vec<(String, usize)>,
+    // Message which when sent to a node via its `message_sender` indicates to the node that it
+    // should terminate.
+    termination_message: String,
 }
 
 impl Network {
     fn new(node_count: usize) -> Self {
-        let (mut nodes, channels_to_nodes): (Vec<_>, Vec<_>) = itertools::repeat_call(|| {
-            let (channel_transmitter, channel_receiver) = mpsc::unbounded();
-            (Node::new(channel_receiver), channel_transmitter)
-        }).take(node_count)
-            .unzip();
-
-        nodes.sort_by(|lhs, rhs| lhs.id().cmp(&rhs.id()));
-        println!("Nodes: {:?}", nodes);
-
+        let (stats_sender, stats_receiver) = mpsc::unbounded();
         let mut network = Network {
             // pool: CpuPool::new(1),
             pool: CpuPool::new_num_cpus(),
-            channels_to_nodes,
+            message_senders: vec![],
+            stats_receiver,
+            received_messages: HashMap::new(),
+            stats: HashMap::new(),
             node_futures: vec![],
-            messages: vec![],
+            client_messages: vec![],
+            termination_message: rand::thread_rng().gen_ascii_chars().take(20).collect(),
         };
+
+        let mut nodes = vec![];
+        for _ in 0..node_count {
+            let (message_sender, message_receiver) = mpsc::unbounded();
+            let node = Node::new(
+                message_receiver,
+                stats_sender.clone(),
+                network.termination_message.clone(),
+            );
+            network.message_senders.push(message_sender);
+            nodes.push(node);
+        }
+        nodes.sort_by(|lhs, rhs| lhs.id().cmp(&rhs.id()));
+        println!("Nodes: {:?}", nodes);
 
         // Connect all the nodes.
         let listening_address = unwrap!("127.0.0.1:0".parse());
@@ -357,19 +401,58 @@ impl Network {
     /// in the `Network`, then the `Node` at that index will be chosen as the initial informed one.
     fn send(&mut self, message: &str, node_index: Option<usize>) -> Result<(), Error> {
         let count = match node_index {
-            Some(index) if index < self.channels_to_nodes.len() => index,
-            _ => rand::thread_rng().gen_range(0, self.channels_to_nodes.len()),
+            Some(index) if index < self.message_senders.len() => index,
+            _ => rand::thread_rng().gen_range(0, self.message_senders.len()),
         };
-        self.messages.push((message.to_string(), count));
-        unwrap!(self.channels_to_nodes[count].unbounded_send(
+        self.client_messages.push((message.to_string(), count));
+        unwrap!(self.message_senders[count].unbounded_send(
             message.to_string(),
         ));
         Ok(())
     }
 }
 
+impl Future for Network {
+    type Item = ();
+    type Error = String;
+
+    fn poll(&mut self) -> Poll<(), String> {
+        while let Async::Ready(Some((node_id, messages, stats))) =
+            unwrap!(self.stats_receiver.poll())
+        {
+            println!(
+                "Received from {:?} -- {:?} -- {:?}",
+                node_id,
+                messages,
+                stats
+            );
+            let _ = self.received_messages.insert(node_id, messages);
+            let _ = self.stats.insert(node_id, stats);
+        }
+
+        let client_messages_len = self.client_messages.len();
+        let enough_messages = |messages: &Vec<String>| messages.len() >= client_messages_len;
+        if !self.received_messages.is_empty() &&
+            self.received_messages.values().all(enough_messages)
+        {
+            return Ok(Async::Ready(()));
+        }
+
+        if !self.stats.is_empty() && self.stats.values().all(|stats| stats.rounds > 200) {
+            return Err("Not all nodes got all messages.".to_string());
+        }
+
+        Ok(Async::NotReady)
+    }
+}
+
 impl Drop for Network {
     fn drop(&mut self) {
+        for message_sender in &mut self.message_senders {
+            unwrap!(message_sender.unbounded_send(
+                self.termination_message.clone(),
+            ));
+        }
         let node_futures = mem::replace(&mut self.node_futures, vec![]);
         for node_future in node_futures {
             unwrap!(node_future.wait());
@@ -384,5 +467,5 @@ fn main() {
     unwrap!(network.send("Hello", None));
     unwrap!(network.send("there", Some(999)));
     unwrap!(network.send("world", Some(0)));
-    println!("Messages: {:?}", network.messages);
+    unwrap!(network.pool.clone().spawn(network).wait());
 }
