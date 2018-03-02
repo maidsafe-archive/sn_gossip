@@ -34,6 +34,7 @@ pub struct Gossiper {
     keys: Keypair,
     peers: Vec<Id>,
     gossip: Gossip,
+    statistics: Statistics,
 }
 
 // Push & Pull procedure is defined as:
@@ -78,9 +79,11 @@ impl Gossiper {
             Some(id) => *id,
             None => return Err(Error::NoPeers),
         };
+        self.statistics.rounds += 1;
         let push_list = self.gossip.get_push_list();
         let mut messages = Vec::new();
         for (count, msg) in push_list {
+            self.statistics.total_full_message_sent += 1;
             let message = Message::Push(count, msg);
             if let Ok(str) = serialisation::serialise(&message) {
                 messages.push(str);
@@ -89,6 +92,7 @@ impl Gossiper {
             }
         }
         if let Ok(str) = self.pull_tick() {
+            self.statistics.total_pulls_sent += 1;
             messages.push(str);
         } else {
             println!("Failed to serialise Pull request");
@@ -119,12 +123,16 @@ impl Gossiper {
         };
         let mut response = vec![];
         match msg {
-            Message::Push(count, msg) => self.gossip.receive(count, msg),
+            Message::Push(count, msg) => {
+                self.statistics.total_full_message_received += 1;
+                self.gossip.receive(count, msg)
+            }
             Message::Pull => {
                 let messages_pushed_to_peer = self.gossip.handle_pull();
                 for (count, msg) in messages_pushed_to_peer {
                     // println!("{:?} Sending message: {:?} to {:?}", self, msg, peer_id);
                     if let Ok(str) = serialisation::serialise(&Message::Push(count, msg)) {
+                        self.statistics.total_full_message_sent += 1;
                         response.push(str);
                     }
                 }
@@ -133,9 +141,14 @@ impl Gossiper {
         response
     }
 
-    #[cfg(test)]
+    /// Returns the list of messages this gossiper be informed so far.
     pub fn get_messages(&self) -> Vec<Vec<u8>> {
         self.gossip.get_messages()
+    }
+
+    /// Returns the statistics of this gossiper.
+    pub fn get_statistics(&self) -> Statistics {
+        self.statistics
     }
 }
 
@@ -147,6 +160,7 @@ impl Default for Gossiper {
             keys,
             peers: vec![],
             gossip: Gossip::new(),
+            statistics: Statistics::default(),
         }
     }
 }
@@ -154,6 +168,33 @@ impl Default for Gossiper {
 impl Debug for Gossiper {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "{:?}", self.id())
+    }
+}
+
+/// Statistics on each gossiper.
+#[derive(Clone, Copy, Default)]
+pub struct Statistics {
+    /// Total rounds experienced (each push_tick is considered as one round).
+    pub rounds: u64,
+    /// Total pull requests sent from this gossiper.
+    pub total_pulls_sent: u64,
+    /// Total full message sent from this gossiper.
+    pub total_full_message_sent: u64,
+    /// Total full message this gossiper received.
+    pub total_full_message_received: u64,
+}
+
+impl Debug for Statistics {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        writeln!(
+            formatter,
+            "rounds: {} total_pulls_sent {} total_full_message_sent {} \
+            total_full_message_received {}",
+            self.rounds,
+            self.total_pulls_sent,
+            self.total_full_message_sent,
+            self.total_full_message_received
+        )
     }
 }
 
