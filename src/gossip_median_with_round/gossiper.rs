@@ -18,8 +18,8 @@
 #![allow(dead_code)]
 
 use super::gossip::Gossip;
-use super::messages::Message;
-use ed25519_dalek::Keypair;
+use super::messages::{GossipRpc, Message};
+use ed25519_dalek::{Keypair, PublicKey};
 use error::Error;
 use id::Id;
 use maidsafe_utilities::serialisation;
@@ -84,14 +84,14 @@ impl Gossiper {
         let mut messages = Vec::new();
         for (count, msg) in push_list {
             self.statistics.total_full_message_sent += 1;
-            let message = Message::Push(count, msg);
-            if let Ok(str) = serialisation::serialise(&message) {
+            let rpc = GossipRpc::Push(count, msg);
+            if let Ok(str) = Message::serialise(&rpc, &self.keys) {
                 messages.push(str);
             } else {
-                error!("Failed to serialise {:?}", message);
+                error!("Failed to serialise {:?}", rpc);
             }
         }
-        if let Ok(str) = serialisation::serialise(&Message::Pull) {
+        if let Ok(str) = Message::serialise(&GossipRpc::Pull, &self.keys) {
             self.statistics.total_pulls_sent += 1;
             messages.push(str);
         } else {
@@ -110,23 +110,28 @@ impl Gossiper {
             message.len(),
             peer_id
         );
-        let msg = if let Ok(msg) = serialisation::deserialise::<Message>(message) {
-            msg
+        let pub_key = if let Ok(pub_key) = PublicKey::from_bytes(&peer_id.0) {
+            pub_key
+        } else {
+            return Vec::new();
+        };
+        let rpc = if let Ok(rpc) = Message::deserialise(message, &pub_key) {
+            rpc
         } else {
             error!("Failed to deserialise message");
             return Vec::new();
         };
         let mut response = vec![];
-        match msg {
-            Message::Push(count, msg) => {
+        match rpc {
+            GossipRpc::Push(count, msg) => {
                 self.statistics.total_full_message_received += 1;
                 self.gossip.receive(count, msg)
             }
-            Message::Pull => {
+            GossipRpc::Pull => {
                 let messages_pushed_to_peer = self.gossip.handle_pull();
                 for (count, msg) in messages_pushed_to_peer {
                     debug!("{:?} Sending message: {:?} to {:?}", self, msg, peer_id);
-                    if let Ok(str) = serialisation::serialise(&Message::Push(count, msg)) {
+                    if let Ok(str) = Message::serialise(&GossipRpc::Push(count, msg), &self.keys) {
                         self.statistics.total_full_message_sent += 1;
                         response.push(str);
                     }
