@@ -54,6 +54,7 @@ extern crate unwrap;
 mod error;
 mod gossip_basic;
 mod gossip_median;
+mod gossip_median_with_round;
 mod id;
 
 pub use error::Error;
