@@ -23,7 +23,7 @@ pub type Digest256 = [u8; 32];
 
 /// Gossip protocol handler
 pub struct Gossip {
-    messages: BTreeMap<Digest256, (bool, String)>,
+    messages: BTreeMap<Digest256, (bool, Vec<u8>)>,
 }
 
 impl Gossip {
@@ -31,12 +31,12 @@ impl Gossip {
         Gossip { messages: BTreeMap::new() }
     }
 
-    pub fn get_messages(&self) -> Vec<String> {
+    pub fn get_messages(&self) -> Vec<Vec<u8>> {
         self.messages.values().map(|v| v.1.clone()).collect()
     }
 
-    pub fn inform_or_receive(&mut self, msg: String) {
-        let msg_hash = sha3_256(msg.as_bytes());
+    pub fn inform_or_receive(&mut self, msg: Vec<u8>) {
+        let msg_hash = sha3_256(&msg);
         let _ = self.messages.entry(msg_hash).or_insert((true, msg));
     }
 
@@ -76,13 +76,13 @@ impl Gossip {
         &mut self,
         already_had_msg_hash_list: &BTreeSet<Digest256>,
         you_may_need_msg_hash_list: &BTreeSet<Digest256>,
-    ) -> (Vec<String>, BTreeSet<Digest256>) {
+    ) -> (Vec<Vec<u8>>, BTreeSet<Digest256>) {
         for hash in already_had_msg_hash_list {
             if let Some(v) = self.messages.get_mut(hash) {
                 v.0 = false;
             }
         }
-        let pushed_messages: Vec<String> = self.messages
+        let pushed_messages: Vec<Vec<u8>> = self.messages
             .values()
             .filter_map(|v| if v.0 { Some(v.1.clone()) } else { None })
             .collect();
@@ -96,7 +96,7 @@ impl Gossip {
         )
     }
 
-    pub fn handle_pull(&mut self, messages_peer_need: &BTreeSet<Digest256>) -> Vec<String> {
+    pub fn handle_pull(&mut self, messages_peer_need: &BTreeSet<Digest256>) -> Vec<Vec<u8>> {
         self.messages
             .iter()
             .filter_map(|(k, v)| if messages_peer_need.contains(k) {

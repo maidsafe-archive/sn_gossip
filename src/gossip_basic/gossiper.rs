@@ -19,13 +19,16 @@
 
 use super::gossip::Gossip;
 use super::messages::Message;
+
 use ed25519_dalek::Keypair;
 use error::Error;
 use id::Id;
 use maidsafe_utilities::serialisation;
 use rand::{self, Rng};
+use serde::ser::Serialize;
 use sha3::Sha3_512;
 use std::fmt::{self, Debug, Formatter};
+use std::thread;
 
 #[allow(unused)]
 /// An entity on the network which will gossip messages.
@@ -62,16 +65,18 @@ impl Gossiper {
         if !self.gossip.get_messages().is_empty() {
             return Err(Error::AlreadyStarted);
         }
-        let _ = self.peers.push(peer_id);
+        self.peers.push(peer_id);
         Ok(())
     }
 
     /// Send a new message starting at this `Gossiper`.
-    pub fn send_new(&mut self, message: &str) -> Result<(Id, Vec<u8>), Error> {
+    pub fn send_new<T: Serialize>(&mut self, message: &T) -> Result<(Id, Vec<u8>), Error> {
         if self.peers.is_empty() {
             return Err(Error::NoPeers);
         }
-        self.gossip.inform_or_receive(message.to_string());
+        self.gossip.inform_or_receive(
+            serialisation::serialise(message)?,
+        );
         return Err(Error::NoPeers);
         // Ok(self.push_tick())
     }
@@ -83,7 +88,12 @@ impl Gossiper {
             None => return Err(Error::NoPeers),
         };
         let push_list = self.gossip.get_hot_msg_hash_list();
-        // println!("{:?} Sending push_list to {:?}", self, peer_id);
+        // println!(
+        //     "{:?} - {:?} Sending push_list to {:?}",
+        //     thread::current().id(),
+        //     self,
+        //     peer_id
+        // );
         if let Ok(msg) = serialisation::serialise(&Message::Push(push_list)) {
             Ok((peer_id, vec![msg]))
         } else {
@@ -92,9 +102,10 @@ impl Gossiper {
     }
 
     /// Handles an incoming message from peer.
-    pub fn handle_received_message(&mut self, _peer_id: &Id, message: &[u8]) -> Vec<Vec<u8>> {
+    pub fn handle_received_message(&mut self, peer_id: &Id, message: &[u8]) -> Vec<Vec<u8>> {
         // println!(
-        //     "{:?} handling message of {} bytes from {:?}",
+        //     "{:?} - {:?} handling message of {} bytes from {:?}",
+        //     thread::current().id(),
         //     self,
         //     message.len(),
         //     peer_id
@@ -112,8 +123,9 @@ impl Gossiper {
                 let (already_had_msg_hash_list, peer_may_need_msg_hash_list) =
                     self.gossip.handle_push(&hash_list);
                 // println!(
-                //     "{:?} sending (already_had_msg_hash_list, peer_may_need_msg_hash_list) \
+                //     "{:?} - {:?} sending (already_had_msg_hash_list, peer_may_need_msg_hash_list) \
                 //           ({:?}, {:?}) to {:?}",
+                //     thread::current().id(),
                 //     self,
                 //     already_had_msg_hash_list,
                 //     peer_may_need_msg_hash_list,
@@ -122,8 +134,7 @@ impl Gossiper {
                 if let Ok(str) = serialisation::serialise(&Message::PushResponse {
                     already_had_msg_hash_list,
                     peer_may_need_msg_hash_list,
-                })
-                {
+                }) {
                     response.push(str);
                 }
             }
@@ -136,27 +147,38 @@ impl Gossiper {
                     &peer_may_need_msg_hash_list,
                 );
                 for message in messages_pushed_to_peer {
-                    // println!("{:?} Sending message: {:?} to {:?}", self, message, peer_id);
+                    // println!(
+                    //     "{:?} - {:?} Sending message: {:?} to {:?}",
+                    //     thread::current().id(),
+                    //     self,
+                    //     message,
+                    //     peer_id
+                    // );
                     if let Ok(str) = serialisation::serialise(&Message::Message(message)) {
                         response.push(str);
                     }
                 }
-                // println!(
-                //     "{:?} Sending messages_i_need: {:?} to {:?}",
-                //     self,
-                //     messages_i_need,
-                //     peer_id
-                // );
-                if !messages_i_need.is_empty() {
-                    if let Ok(str) = serialisation::serialise(&Message::Pull(messages_i_need)) {
-                        response.push(str);
-                    }
+                if let Ok(str) = serialisation::serialise(&Message::Pull(messages_i_need)) {
+                    println!(
+                        "{:?} - {:?} Sending messages_i_need of {} bytes to {:?}",
+                        thread::current().id(),
+                        self,
+                        str.len(),
+                        peer_id
+                    );                        
+                    response.push(str);
                 }
             }
             Message::Pull(hash_list) => {
                 let messages_pushed_to_peer = self.gossip.handle_pull(&hash_list);
                 for message in messages_pushed_to_peer {
-                    // println!("{:?} Sending message: {:?} to {:?}", self, message, peer_id);
+                    println!(
+                        "{:?} - {:?} Sending message: {:?} to {:?}",
+                        thread::current().id(),
+                        self,
+                        message,
+                        peer_id
+                    );
                     if let Ok(str) = serialisation::serialise(&Message::Message(message)) {
                         response.push(str);
                     }
@@ -167,7 +189,7 @@ impl Gossiper {
     }
 
     #[cfg(test)]
-    pub fn get_messages(&self) -> Vec<String> {
+    pub fn get_messages(&self) -> Vec<Vec<u8>> {
         self.gossip.get_messages()
     }
 }

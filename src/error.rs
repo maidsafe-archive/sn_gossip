@@ -31,7 +31,7 @@ quick_error! {
             description("Already started gossiping")
             display("Connections to all other nodes must be made before sending any messages.")
         }
-        /// IO Error.
+        /// IO error.
         Io(error: ::std::io::Error) {
             description(error.description())
             display("I/O error: {}", error)

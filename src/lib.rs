@@ -55,7 +55,6 @@ mod error;
 mod gossip_basic;
 mod gossip_median;
 mod id;
-mod node;
 
 pub use error::Error;
 pub use gossip_median::gossiper::Gossiper;
