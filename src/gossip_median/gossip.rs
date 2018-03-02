@@ -47,7 +47,7 @@ impl Gossip {
         self.cold_rounds = cmp::max(3, 3 * self.hot_rounds);
     }
 
-    pub fn get_messages(&self) -> Vec<Vec<u8>> {
+    pub fn messages(&self) -> Vec<Vec<u8>> {
         self.messages.values().map(|v| v.1.clone()).collect()
     }
 
@@ -74,7 +74,7 @@ impl Gossip {
             })
             .cloned()
             .collect();
-        for (_k, v) in self.messages.iter_mut() {
+        for v in self.messages.values_mut() {
             if v.0 <= self.cold_rounds {
                 v.0 += 1;
             }

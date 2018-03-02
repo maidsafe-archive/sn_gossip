@@ -197,7 +197,7 @@ impl Node {
     /// Receive all new messages from the `Network` object.
     fn receive_from_channel(&mut self) {
         while let Async::Ready(Some(message)) = unwrap!(self.channel_receiver.poll()) {
-            let _ = unwrap!(self.gossiper.send_new(&message));
+            unwrap!(self.gossiper.send_new(&message));
         }
     }
 

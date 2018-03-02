@@ -22,7 +22,7 @@ use super::messages::Message;
 use ed25519_dalek::Keypair;
 use error::Error;
 use id::Id;
-use maidsafe_utilities::serialisation::{self, SerialisationError};
+use maidsafe_utilities::serialisation;
 use rand::{self, Rng};
 use serde::ser::Serialize;
 use sha3::Sha3_512;
@@ -56,10 +56,10 @@ impl Gossiper {
     /// called since this `Gossiper` needs to know about all other nodes in the network before
     /// starting to gossip messages.
     pub fn add_peer(&mut self, peer_id: Id) -> Result<(), Error> {
-        if !self.gossip.get_messages().is_empty() {
+        if !self.gossip.messages().is_empty() {
             return Err(Error::AlreadyStarted);
         }
-        let _ = self.peers.push(peer_id);
+        self.peers.push(peer_id);
         self.gossip.add_peer();
         Ok(())
     }
@@ -88,37 +88,32 @@ impl Gossiper {
             if let Ok(str) = serialisation::serialise(&message) {
                 messages.push(str);
             } else {
-                println!("Failed to serialise {:?}", message);
+                error!("Failed to serialise {:?}", message);
             }
         }
-        if let Ok(str) = self.pull_tick() {
+        if let Ok(str) = serialisation::serialise(&Message::Pull) {
             self.statistics.total_pulls_sent += 1;
             messages.push(str);
         } else {
-            println!("Failed to serialise Pull request");
+            error!("Failed to serialise Pull request");
         }
 
-        // println!("{:?} Sending messages and pull to {:?}", self, peer_id);
+        debug!("{:?} Sending messages and pull to {:?}", self, peer_id);
         Ok((peer_id, messages))
     }
 
-    /// Start a pull round.
-    pub fn pull_tick(&self) -> Result<Vec<u8>, SerialisationError> {
-        serialisation::serialise(&Message::Pull)
-    }
-
     /// Handles an incoming message from peer.
-    pub fn handle_received_message(&mut self, _peer_id: &Id, message: &[u8]) -> Vec<Vec<u8>> {
-        // println!(
-        //     "{:?} handling message of {} bytes from {:?}",
-        //     self,
-        //     message.len(),
-        //     peer_id
-        // );
+    pub fn handle_received_message(&mut self, peer_id: &Id, message: &[u8]) -> Vec<Vec<u8>> {
+        debug!(
+            "{:?} handling message of {} bytes from {:?}",
+            self,
+            message.len(),
+            peer_id
+        );
         let msg = if let Ok(msg) = serialisation::deserialise::<Message>(message) {
             msg
         } else {
-            println!("Failed to deserialise message");
+            error!("Failed to deserialise message");
             return Vec::new();
         };
         let mut response = vec![];
@@ -130,7 +125,7 @@ impl Gossiper {
             Message::Pull => {
                 let messages_pushed_to_peer = self.gossip.handle_pull();
                 for (count, msg) in messages_pushed_to_peer {
-                    // println!("{:?} Sending message: {:?} to {:?}", self, msg, peer_id);
+                    debug!("{:?} Sending message: {:?} to {:?}", self, msg, peer_id);
                     if let Ok(str) = serialisation::serialise(&Message::Push(count, msg)) {
                         self.statistics.total_full_message_sent += 1;
                         response.push(str);
@@ -142,12 +137,12 @@ impl Gossiper {
     }
 
     /// Returns the list of messages this gossiper be informed so far.
-    pub fn get_messages(&self) -> Vec<Vec<u8>> {
-        self.gossip.get_messages()
+    pub fn messages(&self) -> Vec<Vec<u8>> {
+        self.gossip.messages()
     }
 
     /// Returns the statistics of this gossiper.
-    pub fn get_statistics(&self) -> Statistics {
+    pub fn statistics(&self) -> Statistics {
         self.statistics
     }
 }
@@ -340,7 +335,7 @@ mod tests {
             processed = false;
             metrics.rounds += 1;
             let mut messages = BTreeMap::new();
-            for gossiper in gossipers.iter_mut() {
+            for gossiper in &mut gossipers {
                 let (dst, msgs) = unwrap!(gossiper.push_tick());
                 if msgs.len() > 1 {
                     metrics.total_pushes += msgs.len() as u64 - 1;
@@ -366,20 +361,17 @@ mod tests {
                     metrics.total_pull_respones += result.len() as u64;
                     metrics.total_full_message += result.len() as u64;
                     let _ = responses.insert((dst, src), result);
-                    // println!("responses {:?}", responses);
                 }
                 messages = responses;
-                // println!("messages {:?}", messages);
             }
         }
 
         // Checking nodes missed the message
         for gossiper in &gossipers {
-            if gossiper.get_messages().is_empty() {
+            if gossiper.messages().is_empty() {
                 metrics.nodes_missed += 1;
                 metrics.msg_missed = 1;
             }
-            // println!("{:?} has {:?}", gossiper.id(), gossiper.get_messages());
         }
         metrics
     }
@@ -417,7 +409,7 @@ mod tests {
             processed = false;
             metrics.rounds += 1;
             let mut messages = BTreeMap::new();
-            for gossiper in gossipers.iter_mut() {
+            for gossiper in &mut gossipers {
                 if rng.gen() && !rumors.is_empty() {
                     let rumor = unwrap!(rumors.pop());
                     let _ = gossiper.send_new(&rumor);
@@ -447,10 +439,8 @@ mod tests {
                     metrics.total_pull_respones += result.len() as u64;
                     metrics.total_full_message += result.len() as u64;
                     let _ = responses.insert((dst, src), result);
-                    // println!("responses {:?}", responses);
                 }
                 messages = responses;
-                // println!("messages {:?}", messages);
             }
         }
 
@@ -458,14 +448,13 @@ mod tests {
         let mut max_missed_msg_on_one_node = 0;
         let mut min_missed_msg_on_one_node = u64::MAX;
         for gossiper in &gossipers {
-            if gossiper.get_messages().len() != msg_count {
+            if gossiper.messages().len() != msg_count {
                 metrics.nodes_missed += 1;
-                let missed_msgs = (msg_count - gossiper.get_messages().len()) as u64;
+                let missed_msgs = (msg_count - gossiper.messages().len()) as u64;
                 min_missed_msg_on_one_node = cmp::min(min_missed_msg_on_one_node, missed_msgs);
                 max_missed_msg_on_one_node = cmp::max(max_missed_msg_on_one_node, missed_msgs);
                 metrics.msg_missed += missed_msgs;
             }
-            // println!("{:?} has {:?}", gossiper.id(), gossiper.get_messages());
         }
 
         println!(

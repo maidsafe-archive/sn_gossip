@@ -31,7 +31,7 @@ impl Gossip {
         Gossip { messages: BTreeMap::new() }
     }
 
-    pub fn get_messages(&self) -> Vec<Vec<u8>> {
+    pub fn messages(&self) -> Vec<Vec<u8>> {
         self.messages.values().map(|v| v.1.clone()).collect()
     }
 
