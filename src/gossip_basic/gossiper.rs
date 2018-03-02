@@ -62,7 +62,7 @@ impl Gossiper {
     /// called since this `Gossiper` needs to know about all other nodes in the network before
     /// starting to gossip messages.
     pub fn add_peer(&mut self, peer_id: Id) -> Result<(), Error> {
-        if !self.gossip.get_messages().is_empty() {
+        if !self.gossip.messages().is_empty() {
             return Err(Error::AlreadyStarted);
         }
         self.peers.push(peer_id);
@@ -189,8 +189,8 @@ impl Gossiper {
     }
 
     #[cfg(test)]
-    pub fn get_messages(&self) -> Vec<Vec<u8>> {
-        self.gossip.get_messages()
+    pub fn messages(&self) -> Vec<Vec<u8>> {
+        self.gossip.messages()
     }
 }
 
@@ -341,7 +341,7 @@ mod tests {
             processed = false;
             metrics.rounds += 1;
             let mut messages = BTreeMap::new();
-            for gossiper in gossipers.iter_mut() {
+            for gossiper in &mut gossipers {
                 let (dst, msgs) = unwrap!(gossiper.push_tick());
                 let _ = messages.insert((gossiper.id(), dst), msgs);
             }
@@ -376,11 +376,11 @@ mod tests {
 
         // Checking nodes missed the message
         for gossiper in &gossipers {
-            if gossiper.get_messages().is_empty() {
+            if gossiper.messages().is_empty() {
                 metrics.nodes_missed += 1;
                 metrics.msg_missed = 1;
             }
-            // println!("{:?} has {:?}", gossiper.id(), gossiper.get_messages());
+            // println!("{:?} has {:?}", gossiper.id(), gossiper.messages());
         }
         metrics
     }
@@ -418,7 +418,7 @@ mod tests {
             processed = false;
             metrics.rounds += 1;
             let mut messages = BTreeMap::new();
-            for gossiper in gossipers.iter_mut() {
+            for gossiper in &mut gossipers {
                 if rng.gen() && !rumors.is_empty() {
                     let rumor = unwrap!(rumors.pop());
                     let _ = gossiper.send_new(&rumor);
@@ -459,14 +459,14 @@ mod tests {
         let mut max_missed_msg_on_one_node = 0;
         let mut min_missed_msg_on_one_node = u64::MAX;
         for gossiper in &gossipers {
-            if gossiper.get_messages().len() != msg_count {
+            if gossiper.messages().len() != msg_count {
                 metrics.nodes_missed += 1;
-                let missed_msgs = (msg_count - gossiper.get_messages().len()) as u64;
+                let missed_msgs = (msg_count - gossiper.messages().len()) as u64;
                 min_missed_msg_on_one_node = cmp::min(min_missed_msg_on_one_node, missed_msgs);
                 max_missed_msg_on_one_node = cmp::max(max_missed_msg_on_one_node, missed_msgs);
                 metrics.msg_missed += missed_msgs;
             }
-            // println!("{:?} has {:?}", gossiper.id(), gossiper.get_messages());
+            // println!("{:?} has {:?}", gossiper.id(), gossiper.messages());
         }
 
         println!(

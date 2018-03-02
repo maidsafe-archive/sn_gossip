@@ -37,6 +37,8 @@ extern crate ed25519_dalek;
 extern crate futures;
 #[cfg(test)]
 extern crate itertools;
+#[macro_use]
+extern crate log;
 extern crate maidsafe_utilities;
 #[macro_use]
 extern crate quick_error;

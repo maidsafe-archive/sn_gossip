@@ -49,7 +49,7 @@ impl Gossip {
         self.cold_rounds = cmp::max(2, 2 * self.hot_rounds);
     }
 
-    pub fn get_messages(&self) -> Vec<Vec<u8>> {
+    pub fn messages(&self) -> Vec<Vec<u8>> {
         self.messages.values().map(|v| v.1.clone()).collect()
     }
 
@@ -64,7 +64,7 @@ impl Gossip {
         if entry.0 < count {
             entry.0 = count;
         }
-        let hit_entry = self.hits.entry(msg_hash).or_insert(vec![]);
+        let hit_entry = self.hits.entry(msg_hash).or_insert_with(Vec::new);
         hit_entry.push(count);
     }
 
@@ -78,14 +78,14 @@ impl Gossip {
             })
             .cloned()
             .collect();
-        for (_k, v) in self.messages.iter_mut() {
+        for v in self.messages.values_mut() {
             if v.0 <= self.cold_rounds {
                 v.0 += 1;
             }
         }
 
         let hits_map = mem::replace(&mut self.hits, BTreeMap::new());
-        for (k, v) in self.messages.iter_mut() {
+        for (k, v) in &mut self.messages {
             if let Some(hits) = hits_map.get(k) {
                 let mut less = 0;
                 let mut greater_or_equal = 0;
