@@ -31,21 +31,32 @@
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
 #![allow(box_pointers, missing_copy_implementations, missing_debug_implementations,
-         variant_size_differences, non_camel_case_types)]
+         unused_extern_crates, variant_size_differences, non_camel_case_types)]
 
 extern crate ed25519_dalek;
 extern crate futures;
+#[cfg(test)]
+extern crate itertools;
 extern crate maidsafe_utilities;
 #[macro_use]
 extern crate quick_error;
 extern crate rand;
-extern crate sha3;
+extern crate serde;
 #[macro_use]
+extern crate serde_derive;
+extern crate sha3;
+extern crate tiny_keccak;
+#[cfg(test)]
+#[macro_use]
+#[cfg(test)]
 extern crate unwrap;
 
 mod error;
-mod gossiper;
-mod node;
+mod gossip_basic;
+mod gossip_median;
+mod gossip_median_with_round;
+mod id;
 
 pub use error::Error;
-pub use gossiper::Gossiper;
+pub use gossip_median::gossiper::Gossiper;
+pub use id::Id;

@@ -15,33 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::SerialisationError;
+mod gossip;
+mod messages;
 
-quick_error! {
-    /// Gossiper error variants.
-    #[derive(Debug)]
-    pub enum Error {
-        /// No connected peers.
-        NoPeers {
-            description("No connected peers")
-            display("There are no connected peers with which to gossip.")
-        }
-        /// Already started gossiping.
-        AlreadyStarted {
-            description("Already started gossiping")
-            display("Connections to all other nodes must be made before sending any messages.")
-        }
-        /// IO error.
-        Io(error: ::std::io::Error) {
-            description(error.description())
-            display("I/O error: {}", error)
-            from()
-        }
-        /// Serialisation Error.
-        Serialisation(error: SerialisationError) {
-            description(error.description())
-            display("Serialisation error: {}", error)
-            from()
-        }
-    }
-}
+pub mod gossiper;

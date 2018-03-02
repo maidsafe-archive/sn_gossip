@@ -15,33 +15,24 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::SerialisationError;
+use super::gossip::Digest256;
+use std::collections::BTreeSet;
 
-quick_error! {
-    /// Gossiper error variants.
-    #[derive(Debug)]
-    pub enum Error {
-        /// No connected peers.
-        NoPeers {
-            description("No connected peers")
-            display("There are no connected peers with which to gossip.")
-        }
-        /// Already started gossiping.
-        AlreadyStarted {
-            description("Already started gossiping")
-            display("Connections to all other nodes must be made before sending any messages.")
-        }
-        /// IO error.
-        Io(error: ::std::io::Error) {
-            description(error.description())
-            display("I/O error: {}", error)
-            from()
-        }
-        /// Serialisation Error.
-        Serialisation(error: SerialisationError) {
-            description(error.description())
-            display("Serialisation error: {}", error)
-            from()
-        }
-    }
+/// Messages sent via a direct connection, wrapper of gossip protocol rpcs.
+#[derive(Serialize, Deserialize)]
+pub enum Message {
+    /// Sent a message from one node to another.
+    Message(Vec<u8>),
+    /// Sent from Node A to Node B to notify a list of hot messages.
+    Push(BTreeSet<Digest256>),
+    /// Sent from Node B to Node A on receiving a push notification.
+    /// Contains the list of message hash that already have,
+    /// and the list of message hash that node B thinks node A may needed.
+    PushResponse {
+        already_had_msg_hash_list: BTreeSet<Digest256>,
+        peer_may_need_msg_hash_list: BTreeSet<Digest256>,
+    },
+    /// Sent from Node A to Node B on receiving a PushResponse.
+    /// Contains the list of hash that node A wants to fetch messages from node B.
+    Pull(BTreeSet<Digest256>),
 }

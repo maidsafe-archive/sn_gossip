@@ -9,16 +9,23 @@ repository = "https://github.com/maidsafe/safe_gossip"
 version = "0.1.0"
 
 [dependencies]
+bytes = "~0.4.6"
 ed25519-dalek = "~0.6.1"
 futures = "~0.1.18"
 maidsafe_utilities = "~0.15.0"
 quick-error = "~1.2.1"
 rand = "~0.4.2"
+serde = "~1.0.15"
+serde_derive = "~1.0.15"
 sha3 = "~0.7.2"
+tiny-keccak = "~1.3.1"
 unwrap = "~1.1.0"
 
 [dev-dependencies]
+futures-cpupool = "~0.1.8"
 itertools = "~0.7.6"
+tokio = "~0.1.1"
+tokio-io = "~0.1.5"
 
 [features]
 default = ["ed25519-dalek/serde"]
