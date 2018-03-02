@@ -52,6 +52,7 @@ extern crate tiny_keccak;
 extern crate unwrap;
 
 mod error;
+mod gossip_basic;
 mod gossip_median;
 mod id;
 mod node;
