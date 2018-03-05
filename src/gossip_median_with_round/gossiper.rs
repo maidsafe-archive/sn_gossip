@@ -281,12 +281,93 @@ mod tests {
         }
     }
 
+    fn send_messages(node_count: u32, num_of_msgs: u32) -> Metrics {
+        let mut rng = SeededRng::thread_rng();
+        let mut gossipers = itertools::repeat_call(Gossiper::default)
+            .take(node_count as usize)
+            .collect_vec();
+        // Connect all the gossipers.
+        for i in 0..(gossipers.len() - 1) {
+            let lhs_id = gossipers[i].id();
+            for j in (i + 1)..gossipers.len() {
+                let rhs_id = gossipers[j].id();
+                let _ = gossipers[j].add_peer(lhs_id);
+                let _ = gossipers[i].add_peer(rhs_id);
+            }
+        }
+        let mut rumors: Vec<String> = Vec::new();
+        for _ in 0..num_of_msgs {
+            let raw: Vec<u8> = rng.gen_iter().take(20).collect();
+            rumors.push(String::from_utf8_lossy(&raw).to_string());
+        }
+
+        // Inform the initial message.
+        {
+            assert!(num_of_msgs >= 1);
+            let gossiper = unwrap!(rand::thread_rng().choose_mut(&mut gossipers));
+            let rumor = unwrap!(rumors.pop());
+            let _ = gossiper.send_new(&rumor);
+        }
+
+        let mut metrics = Metrics::default();
+
+        // Polling
+        let mut processed = true;
+        while processed {
+            processed = false;
+            metrics.rounds += 1;
+            let mut messages = BTreeMap::new();
+            for gossiper in &mut gossipers {
+                if !rumors.is_empty() && rng.gen() {
+                    let rumor = unwrap!(rumors.pop());
+                    let _ = gossiper.send_new(&rumor);
+                }
+                let (dst, msgs) = unwrap!(gossiper.push_tick());
+                if msgs.len() > 1 {
+                    metrics.total_pushes += msgs.len() as u64 - 1;
+                    metrics.total_full_message += msgs.len() as u64 - 1;
+                    processed = true;
+                }
+                let _ = messages.insert((gossiper.id(), dst), msgs);
+            }
+            metrics.total_pulls += u64::from(node_count);
+            let mut has_response = true;
+            while has_response {
+                has_response = false;
+                let mut responses = BTreeMap::new();
+                for ((src, dst), msgs) in messages {
+                    let mut target = unwrap!(gossipers.iter_mut().find(|g| g.id() == dst));
+                    let mut result = Vec::new();
+                    for msg in msgs {
+                        result.extend(target.handle_received_message(&src, &msg));
+                    }
+                    if !result.is_empty() {
+                        has_response = true;
+                    }
+                    metrics.total_pull_respones += result.len() as u64;
+                    metrics.total_full_message += result.len() as u64;
+                    let _ = responses.insert((dst, src), result);
+                }
+                messages = responses;
+            }
+        }
+
+        // Checking nodes missed the message
+        for gossiper in &gossipers {
+            if gossiper.messages().len() as u32 != num_of_msgs {
+                metrics.nodes_missed += 1;
+                metrics.msg_missed += u64::from(num_of_msgs - gossiper.messages().len() as u32);
+            }
+        }
+        metrics
+    }
+
     #[test]
     fn one_message() {
         let iterations = 1000;
         let mut metrics = Vec::new();
         for _ in 0..iterations {
-            metrics.push(send_one_message_and_gossip())
+            metrics.push(send_messages(200, 1))
         }
 
         let mut metrics_total = Metrics::default();
@@ -312,169 +393,11 @@ mod tests {
         println!("MAX -- {:?}", metrics_max);
     }
 
-    fn send_one_message_and_gossip() -> Metrics {
-        let node_count = 16;
-        let mut gossipers = itertools::repeat_call(Gossiper::default)
-            .take(node_count)
-            .collect_vec();
-        // Connect all the gossipers.
-        for i in 0..(gossipers.len() - 1) {
-            let lhs_id = gossipers[i].id();
-            for j in (i + 1)..gossipers.len() {
-                let rhs_id = gossipers[j].id();
-                let _ = gossipers[j].add_peer(lhs_id);
-                let _ = gossipers[i].add_peer(rhs_id);
-            }
-        }
-        // Inform one message.
-        {
-            let gossiper = unwrap!(rand::thread_rng().choose_mut(&mut gossipers));
-            let _ = gossiper.send_new(&"hello".to_string());
-        }
-
-        let mut metrics = Metrics::default();
-
-        // Polling
-        let mut processed = true;
-        while processed {
-            processed = false;
-            metrics.rounds += 1;
-            let mut messages = BTreeMap::new();
-            for gossiper in &mut gossipers {
-                let (dst, msgs) = unwrap!(gossiper.push_tick());
-                if msgs.len() > 1 {
-                    metrics.total_pushes += msgs.len() as u64 - 1;
-                    metrics.total_full_message += msgs.len() as u64 - 1;
-                    processed = true;
-                }
-                let _ = messages.insert((gossiper.id(), dst), msgs);
-            }
-            metrics.total_pulls += node_count as u64;
-            let mut has_response = true;
-            while has_response {
-                has_response = false;
-                let mut responses = BTreeMap::new();
-                for ((src, dst), msgs) in messages {
-                    let mut target = unwrap!(gossipers.iter_mut().find(|g| g.id() == dst));
-                    let mut result = Vec::new();
-                    for msg in msgs {
-                        result.extend(target.handle_received_message(&src, &msg));
-                    }
-                    if !result.is_empty() {
-                        has_response = true;
-                    }
-                    metrics.total_pull_respones += result.len() as u64;
-                    metrics.total_full_message += result.len() as u64;
-                    let _ = responses.insert((dst, src), result);
-                }
-                messages = responses;
-            }
-        }
-
-        // Checking nodes missed the message
-        for gossiper in &gossipers {
-            if gossiper.messages().is_empty() {
-                metrics.nodes_missed += 1;
-                metrics.msg_missed = 1;
-            }
-        }
-        metrics
-    }
-
     #[test]
     fn multiple_messages() {
-        let node_count = 2000;
-        let msg_count = 1000;
-        let mut rng = SeededRng::thread_rng();
-
-        let mut gossipers = itertools::repeat_call(Gossiper::default)
-            .take(node_count)
-            .collect_vec();
-        // Connect all the gossipers.
-        for i in 0..(gossipers.len() - 1) {
-            let lhs_id = gossipers[i].id();
-            for j in (i + 1)..gossipers.len() {
-                let rhs_id = gossipers[j].id();
-                let _ = gossipers[j].add_peer(lhs_id);
-                let _ = gossipers[i].add_peer(rhs_id);
-            }
-        }
-
-        let mut rumors: Vec<String> = Vec::new();
-        for _ in 0..msg_count {
-            let raw: Vec<u8> = rng.gen_iter().take(20).collect();
-            rumors.push(String::from_utf8_lossy(&raw).to_string());
-        }
-
-        let mut metrics = Metrics::default();
-
-        // Polling
-        let mut processed = true;
-        while processed {
-            processed = false;
-            metrics.rounds += 1;
-            let mut messages = BTreeMap::new();
-            for gossiper in &mut gossipers {
-                if rng.gen() && !rumors.is_empty() {
-                    let rumor = unwrap!(rumors.pop());
-                    let _ = gossiper.send_new(&rumor);
-                }
-                let (dst, msgs) = unwrap!(gossiper.push_tick());
-                if msgs.len() > 1 {
-                    metrics.total_pushes += msgs.len() as u64 - 1;
-                    metrics.total_full_message += msgs.len() as u64 - 1;
-                    processed = true;
-                }
-                let _ = messages.insert((gossiper.id(), dst), msgs);
-            }
-            metrics.total_pulls += node_count as u64;
-            let mut has_response = true;
-            while has_response {
-                has_response = false;
-                let mut responses = BTreeMap::new();
-                for ((src, dst), msgs) in messages {
-                    let mut target = unwrap!(gossipers.iter_mut().find(|g| g.id() == dst));
-                    let mut result = Vec::new();
-                    for msg in msgs {
-                        result.extend(target.handle_received_message(&src, &msg));
-                    }
-                    if !result.is_empty() {
-                        has_response = true;
-                    }
-                    metrics.total_pull_respones += result.len() as u64;
-                    metrics.total_full_message += result.len() as u64;
-                    let _ = responses.insert((dst, src), result);
-                }
-                messages = responses;
-            }
-        }
-
-        // Checking nodes missed the message
-        let mut max_missed_msg_on_one_node = 0;
-        let mut min_missed_msg_on_one_node = u64::MAX;
-        for gossiper in &gossipers {
-            if gossiper.messages().len() != msg_count {
-                metrics.nodes_missed += 1;
-                let missed_msgs = (msg_count - gossiper.messages().len()) as u64;
-                min_missed_msg_on_one_node = cmp::min(min_missed_msg_on_one_node, missed_msgs);
-                max_missed_msg_on_one_node = cmp::max(max_missed_msg_on_one_node, missed_msgs);
-                metrics.msg_missed += missed_msgs;
-            }
-        }
-
         println!(
-            "rounds: {} total_pulls {} total_pushes {} total_pull_respones {} \
-             total_full_message {} msg_missed {} nodes_missed {} \
-             min_missed_msg_on_one_node {}  max_missed_msg_on_one_node {}",
-            metrics.rounds,
-            metrics.total_pulls,
-            metrics.total_pushes,
-            metrics.total_pull_respones,
-            metrics.total_full_message,
-            metrics.msg_missed,
-            metrics.nodes_missed,
-            min_missed_msg_on_one_node,
-            max_missed_msg_on_one_node
+            "network of 2000 nodes, sending 1000 messages. \n    {:?}",
+            send_messages(2000, 1000)
         );
     }
 }
