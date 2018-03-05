@@ -383,7 +383,7 @@ mod tests {
 
     #[test]
     fn multiple_messages() {
-        let node_count = 16;
+        let node_count = 2000;
         let msg_count = 1000;
         let mut rng = SeededRng::thread_rng();
 

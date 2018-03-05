@@ -18,13 +18,14 @@
 use ed25519_dalek::{Keypair, PublicKey, Signature};
 use error::Error;
 use maidsafe_utilities::serialisation;
+#[cfg(not(test))]
 use sha3::Sha3_512;
 
 /// Messages sent via a direct connection, wrapper of gossip protocol rpcs.
 #[derive(Serialize, Debug, Deserialize)]
 pub struct Message(pub Vec<u8>, pub Signature);
 
-
+#[cfg(not(test))]
 impl Message {
     pub fn serialise(rpc: &GossipRpc, keys: &Keypair) -> Result<Vec<u8>, Error> {
         let str = serialisation::serialise(rpc)?;
@@ -39,6 +40,17 @@ impl Message {
         } else {
             Err(Error::SigFailure)
         }
+    }
+}
+
+#[cfg(test)]
+impl Message {
+    pub fn serialise(rpc: &GossipRpc, _keys: &Keypair) -> Result<Vec<u8>, Error> {
+        Ok(serialisation::serialise(rpc)?)
+    }
+
+    pub fn deserialise(message: &[u8], _key: &PublicKey) -> Result<GossipRpc, Error> {
+        Ok(serialisation::deserialise(message)?)
     }
 }
 

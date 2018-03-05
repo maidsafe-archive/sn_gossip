@@ -18,12 +18,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use tiny_keccak::sha3_256;
 
+const HOT_HITS: u8 = 3;
+
 /// SHA3-256 hash digest.
 pub type Digest256 = [u8; 32];
 
 /// Gossip protocol handler
 pub struct Gossip {
-    messages: BTreeMap<Digest256, (bool, Vec<u8>)>,
+    messages: BTreeMap<Digest256, (u8, Vec<u8>)>,
 }
 
 impl Gossip {
@@ -37,13 +39,13 @@ impl Gossip {
 
     pub fn inform_or_receive(&mut self, msg: Vec<u8>) {
         let msg_hash = sha3_256(&msg);
-        let _ = self.messages.entry(msg_hash).or_insert((true, msg));
+        let _ = self.messages.entry(msg_hash).or_insert((0, msg));
     }
 
     pub fn get_hot_msg_hash_list(&self) -> BTreeSet<Digest256> {
         self.messages
             .iter()
-            .filter_map(|(k, v)| if v.0 { Some(k) } else { None })
+            .filter_map(|(k, v)| if v.0 <= HOT_HITS { Some(k) } else { None })
             .cloned()
             .collect()
     }
@@ -55,7 +57,7 @@ impl Gossip {
     ) -> (BTreeSet<Digest256>, BTreeSet<Digest256>) {
         let own_hot_msg_hash_list: BTreeSet<Digest256> = self.messages
             .iter()
-            .filter_map(|(k, v)| if v.0 { Some(k) } else { None })
+            .filter_map(|(k, v)| if v.0 <= HOT_HITS { Some(k) } else { None })
             .cloned()
             .collect();
         let own_msg_hash_list: BTreeSet<Digest256> = self.messages.keys().cloned().collect();
@@ -79,12 +81,20 @@ impl Gossip {
     ) -> (Vec<Vec<u8>>, BTreeSet<Digest256>) {
         for hash in already_had_msg_hash_list {
             if let Some(v) = self.messages.get_mut(hash) {
-                v.0 = false;
+                if v.0 <= HOT_HITS {
+                    v.0 += 1;
+                }
             }
         }
         let pushed_messages: Vec<Vec<u8>> = self.messages
-            .values()
-            .filter_map(|v| if v.0 { Some(v.1.clone()) } else { None })
+            .iter()
+            .filter_map(|(k, v)| if v.0 <= HOT_HITS &&
+                !already_had_msg_hash_list.contains(k)
+            {
+                Some(v.1.clone())
+            } else {
+                None
+            })
             .collect();
         let own_msg_hash_list: BTreeSet<Digest256> = self.messages.keys().cloned().collect();
         (
