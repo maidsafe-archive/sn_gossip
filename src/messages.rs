@@ -28,13 +28,13 @@ pub struct Message(pub Vec<u8>, pub Signature);
 #[cfg(not(test))]
 impl Message {
     pub fn serialise(rpc: &GossipRpc, keys: &Keypair) -> Result<Vec<u8>, Error> {
-        let str = serialisation::serialise(rpc)?;
-        let sig: Signature = keys.sign::<Sha3_512>(&str);
-        Ok(serialisation::serialise(&Message(str, sig))?)
+        let serialised_msg = serialisation::serialise(rpc)?;
+        let sig: Signature = keys.sign::<Sha3_512>(&serialised_msg);
+        Ok(serialisation::serialise(&Message(serialised_msg, sig))?)
     }
 
-    pub fn deserialise(message: &[u8], key: &PublicKey) -> Result<GossipRpc, Error> {
-        let msg: Message = serialisation::deserialise(message)?;
+    pub fn deserialise(serialised_msg: &[u8], key: &PublicKey) -> Result<GossipRpc, Error> {
+        let msg: Message = serialisation::deserialise(serialised_msg)?;
         if key.verify::<Sha3_512>(&msg.0, &msg.1) {
             Ok(serialisation::deserialise(&msg.0)?)
         } else {
@@ -49,16 +49,16 @@ impl Message {
         Ok(serialisation::serialise(rpc)?)
     }
 
-    pub fn deserialise(message: &[u8], _key: &PublicKey) -> Result<GossipRpc, Error> {
-        Ok(serialisation::deserialise(message)?)
+    pub fn deserialise(serialised_msg: &[u8], _key: &PublicKey) -> Result<GossipRpc, Error> {
+        Ok(serialisation::deserialise(serialised_msg)?)
     }
 }
 
 /// Gossip rpcs
-#[derive(Serialize, Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum GossipRpc {
     /// Sent from Node A to Node B to push a message and its counter.
-    Push(u8, Vec<u8>),
-    /// Node A pull fom Node B.
-    Pull,
+    Push { msg: Vec<u8>, counter: u8 },
+    /// Sent from Node B to Node A as a reaction to receiving a push message from A.
+    Pull { msg: Vec<u8>, counter: u8 },
 }

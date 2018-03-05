@@ -222,7 +222,7 @@ impl Node {
         if !self.is_in_round {
             self.is_in_round = true;
 
-            let (peer_id, msgs_to_send) = unwrap!(self.gossiper.push_tick());
+            let (peer_id, msgs_to_send) = unwrap!(self.gossiper.next_round());
             if let Some(message_stream) = self.peers.get_mut(&peer_id) {
                 // Buffer the messages to be sent.
                 for msg in msgs_to_send {
@@ -369,7 +369,7 @@ impl Network {
             nodes.push(node);
         }
         nodes.sort_by(|lhs, rhs| lhs.id().cmp(&rhs.id()));
-        println!("Nodes: {:?}", nodes);
+        println!("Nodes: {:?}", nodes.iter().map(Node::id).collect_vec());
 
         // Connect all the nodes.
         let listening_address = unwrap!("127.0.0.1:0".parse());
