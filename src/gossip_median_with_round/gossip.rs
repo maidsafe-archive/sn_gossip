@@ -24,11 +24,19 @@ pub type Digest256 = [u8; 32];
 
 /// Gossip protocol handler
 pub struct Gossip {
+    // (hash_msg, ((counter, rounds)))
     messages: BTreeMap<Digest256, ((u8, u8), Vec<u8>)>,
     total_peers: u64,
+    // state B -> State C, which is ctrmax (lnlnN)
     hot_rounds: u8,
+    // state C -> state D, which is lnlnN for state C
     cold_rounds: u8,
+    // Defines the termination of rumor no matter the counter status
+    // To avoid the situation that hot_rounds doesn't get increased as all other peers evolved out
+    // of State B & C already.
     terminate_rounds: u8,
+    // records the coutners of a message received ruing one round.
+    // Which will be used for calculating counter for the local message.
     hits: BTreeMap<Digest256, Vec<u8>>,
 }
 
@@ -66,6 +74,7 @@ impl Gossip {
         let entry = self.messages.entry(msg_hash).or_insert(
             ((count, count), msg),
         );
+        // When received a copy from peer, update local counter if the incoming counter is greater.
         if (entry.0).0 < count {
             (entry.0).0 = count;
         }
@@ -93,6 +102,9 @@ impl Gossip {
             }
         }
 
+        // Getting push_list indicates a new round is started.
+        // Hence the counters need to be updated according to the peers' counter received during
+        // the prev-completed round.
         let hits_map = mem::replace(&mut self.hits, BTreeMap::new());
         for (k, v) in &mut self.messages {
             if let Some(hits) = hits_map.get(k) {
