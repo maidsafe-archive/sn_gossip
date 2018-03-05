@@ -24,10 +24,11 @@ pub type Digest256 = [u8; 32];
 
 /// Gossip protocol handler
 pub struct Gossip {
-    messages: BTreeMap<Digest256, (u8, Vec<u8>)>,
+    messages: BTreeMap<Digest256, ((u8, u8), Vec<u8>)>,
     total_peers: u64,
     hot_rounds: u8,
     cold_rounds: u8,
+    terminate_rounds: u8,
     hits: BTreeMap<Digest256, Vec<u8>>,
 }
 
@@ -38,6 +39,7 @@ impl Gossip {
             total_peers: 0,
             hot_rounds: 0,
             cold_rounds: 0,
+            terminate_rounds: 0,
             hits: BTreeMap::new(),
         }
     }
@@ -45,9 +47,9 @@ impl Gossip {
     pub fn add_peer(&mut self) {
         self.total_peers += 1;
         let f = self.total_peers as f64;
-        // self.hot_rounds = cmp::max(1, f.ln() as u8);
         self.hot_rounds = cmp::max(1, f.ln().ln() as u8);
         self.cold_rounds = cmp::max(2, 2 * self.hot_rounds);
+        self.terminate_rounds = cmp::max(self.cold_rounds, f.ln() as u8);
     }
 
     pub fn messages(&self) -> Vec<Vec<u8>> {
@@ -56,14 +58,16 @@ impl Gossip {
 
     pub fn inform(&mut self, msg: Vec<u8>) {
         let msg_hash = sha3_256(&msg);
-        let _ = self.messages.entry(msg_hash).or_insert((0, msg));
+        let _ = self.messages.entry(msg_hash).or_insert(((0, 0), msg));
     }
 
     pub fn receive(&mut self, count: u8, msg: Vec<u8>) {
         let msg_hash = sha3_256(&msg);
-        let entry = self.messages.entry(msg_hash).or_insert((count, msg));
-        if entry.0 < count {
-            entry.0 = count;
+        let entry = self.messages.entry(msg_hash).or_insert(
+            ((count, count), msg),
+        );
+        if (entry.0).0 < count {
+            (entry.0).0 = count;
         }
         let hit_entry = self.hits.entry(msg_hash).or_insert_with(Vec::new);
         hit_entry.push(count);
@@ -72,17 +76,20 @@ impl Gossip {
     pub fn get_push_list(&mut self) -> Vec<(u8, Vec<u8>)> {
         let push_list: Vec<(u8, Vec<u8>)> = self.messages
             .iter()
-            .filter_map(|(_k, v)| if v.0 <= self.hot_rounds {
-                Some(v)
+            .filter_map(|(_k, v)| if (v.0).0 <= self.hot_rounds &&
+                (v.0).1 <= self.terminate_rounds
+            {
+                Some(((v.0).0, v.1.clone()))
             } else {
                 None
             })
-            .cloned()
             .collect();
         for v in self.messages.values_mut() {
-            if v.0 <= self.cold_rounds {
-                // if v.0 > self.hot_rounds && v.0 <= self.cold_rounds {
-                v.0 += 1;
+            if (v.0).0 > self.hot_rounds && (v.0).0 <= self.cold_rounds {
+                (v.0).0 += 1;
+            }
+            if (v.0).1 <= self.terminate_rounds {
+                (v.0).1 += 1;
             }
         }
 
@@ -92,15 +99,14 @@ impl Gossip {
                 let mut less = 0;
                 let mut greater_or_equal = 0;
                 for hit in hits {
-                    if *hit < v.0 {
+                    if *hit < (v.0).0 {
                         less += 1;
                     } else {
                         greater_or_equal += 1;
                     }
                 }
-                // if greater_or_equal > cmp::max(v.0, less) {
-                if greater_or_equal > less && v.0 <= self.hot_rounds {
-                    v.0 += 1;
+                if greater_or_equal > less && (v.0).0 <= self.hot_rounds {
+                    (v.0).0 += 1;
                 }
             }
         }
@@ -111,12 +117,13 @@ impl Gossip {
     pub fn handle_pull(&self) -> Vec<(u8, Vec<u8>)> {
         self.messages
             .iter()
-            .filter_map(|(_k, v)| if v.0 <= self.cold_rounds {
-                Some(v)
+            .filter_map(|(_k, v)| if (v.0).0 <= self.cold_rounds &&
+                (v.0).1 <= self.terminate_rounds
+            {
+                Some(((v.0).0, v.1.clone()))
             } else {
                 None
             })
-            .cloned()
             .collect()
     }
 }
