@@ -28,7 +28,7 @@ use rand::{self, Rng};
 use serde::ser::Serialize;
 use sha3::Sha3_512;
 use std::fmt::{self, Debug, Formatter};
-use std::thread;
+// use std::thread;
 
 #[allow(unused)]
 /// An entity on the network which will gossip messages.
@@ -101,7 +101,7 @@ impl Gossiper {
     }
 
     /// Handles an incoming message from peer.
-    pub fn handle_received_message(&mut self, peer_id: &Id, message: &[u8]) -> Vec<Vec<u8>> {
+    pub fn handle_received_message(&mut self, _peer_id: &Id, message: &[u8]) -> Vec<Vec<u8>> {
         // println!(
         //     "{:?} - {:?} handling message of {} bytes from {:?}",
         //     thread::current().id(),
@@ -159,26 +159,26 @@ impl Gossiper {
                     }
                 }
                 if let Ok(str) = serialisation::serialise(&Message::Pull(messages_i_need)) {
-                    println!(
-                        "{:?} - {:?} Sending messages_i_need of {} bytes to {:?}",
-                        thread::current().id(),
-                        self,
-                        str.len(),
-                        peer_id
-                    );
+                    // println!(
+                    //     "{:?} - {:?} Sending messages_i_need of {} bytes to {:?}",
+                    //     thread::current().id(),
+                    //     self,
+                    //     str.len(),
+                    //     peer_id
+                    // );
                     response.push(str);
                 }
             }
             Message::Pull(hash_list) => {
                 let messages_pushed_to_peer = self.gossip.handle_pull(&hash_list);
                 for message in messages_pushed_to_peer {
-                    println!(
-                        "{:?} - {:?} Sending message: {:?} to {:?}",
-                        thread::current().id(),
-                        self,
-                        message,
-                        peer_id
-                    );
+                    // println!(
+                    //     "{:?} - {:?} Sending message: {:?} to {:?}",
+                    //     thread::current().id(),
+                    //     self,
+                    //     message,
+                    //     peer_id
+                    // );
                     if let Ok(str) = serialisation::serialise(&Message::Message(message)) {
                         response.push(str);
                     }

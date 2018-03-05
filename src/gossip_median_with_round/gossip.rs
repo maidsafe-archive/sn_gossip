@@ -45,7 +45,8 @@ impl Gossip {
     pub fn add_peer(&mut self) {
         self.total_peers += 1;
         let f = self.total_peers as f64;
-        self.hot_rounds = cmp::max(1, f.ln() as u8);
+        // self.hot_rounds = cmp::max(1, f.ln() as u8);
+        self.hot_rounds = cmp::max(1, f.ln().ln() as u8);
         self.cold_rounds = cmp::max(2, 2 * self.hot_rounds);
     }
 
@@ -80,6 +81,7 @@ impl Gossip {
             .collect();
         for v in self.messages.values_mut() {
             if v.0 <= self.cold_rounds {
+                // if v.0 > self.hot_rounds && v.0 <= self.cold_rounds {
                 v.0 += 1;
             }
         }
@@ -96,7 +98,8 @@ impl Gossip {
                         greater_or_equal += 1;
                     }
                 }
-                if greater_or_equal > cmp::max(v.0, less) {
+                // if greater_or_equal > cmp::max(v.0, less) {
+                if greater_or_equal > less && v.0 <= self.hot_rounds {
                     v.0 += 1;
                 }
             }
