@@ -186,10 +186,9 @@ pub struct Statistics {
 
 impl Debug for Statistics {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        writeln!(
+        write!(
             formatter,
-            "rounds: {} total_pulls_sent {} total_full_message_sent {} \
-            total_full_message_received {}",
+            "rounds: {},  pulls sent: {},  full messages sent: {},  full messages received: {}",
             self.rounds,
             self.total_pulls_sent,
             self.total_full_message_sent,
