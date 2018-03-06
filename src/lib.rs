@@ -60,5 +60,6 @@ mod messages;
 mod message_state;
 
 pub use error::Error;
-pub use gossiper::{Gossiper, Statistics};
+pub use gossip::Statistics;
+pub use gossiper::Gossiper;
 pub use id::Id;

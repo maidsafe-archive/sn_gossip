@@ -18,7 +18,7 @@
 use id::Id;
 use message_state::MessageState;
 use messages::GossipRpc;
-use std::{cmp, mem};
+use std::{cmp, mem, u64};
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::btree_map::Entry;
 use std::fmt::{self, Debug, Formatter};
@@ -39,6 +39,8 @@ pub struct Gossip {
     max_rounds: u8,
     // All peers with which we communicated during this round.
     peers_in_this_round: BTreeSet<Id>,
+    // Statistics
+    statistics: Statistics,
 }
 
 impl Gossip {
@@ -50,6 +52,7 @@ impl Gossip {
             max_c_rounds: 0,
             max_rounds: 0,
             peers_in_this_round: BTreeSet::new(),
+            statistics: Statistics::default(),
         }
     }
 
@@ -74,6 +77,7 @@ impl Gossip {
     /// Trigger the end of this round.  Returns a list of Push RPCs to be sent to a single random
     /// peer during this new round.
     pub fn next_round(&mut self) -> Vec<GossipRpc> {
+        self.statistics.rounds += 1;
         let mut push_list = vec![];
         let messages = mem::replace(&mut self.messages, BTreeMap::new());
         self.messages = messages
@@ -96,8 +100,10 @@ impl Gossip {
             })
             .collect();
         self.peers_in_this_round.clear();
+        self.statistics.full_message_sent += push_list.len() as u64;
         // Sends an empty Push in case of nothing to push. It acts as a fetch request to peer.
         if push_list.is_empty() {
+            self.statistics.empty_push_sent += 1;
             push_list.push(GossipRpc::Push {
                 msg: Vec::new(),
                 counter: 0,
@@ -130,8 +136,10 @@ impl Gossip {
                     })
                 })
                 .collect();
+            self.statistics.full_message_sent += responses.len() as u64;
             // Empty Pull notifies the peer that all messages in this node was in State A.
             if responses.is_empty() {
+                self.statistics.empty_pull_sent += 1;
                 responses.push(GossipRpc::Pull {
                     msg: Vec::new(),
                     counter: 0,
@@ -144,6 +152,7 @@ impl Gossip {
 
         // Empty Push & Pull shall not be inserted into cache.
         if !(message.is_empty() && counter == 0) {
+            self.statistics.full_message_received += 1;
             // Add or update the entry for this message.
             match self.messages.entry(message) {
                 Entry::Occupied(mut entry) => entry.get_mut().receive(peer_id, counter),
@@ -163,8 +172,14 @@ impl Gossip {
     #[cfg(test)]
     /// Clear the cache.
     pub fn clear(&mut self) {
+        self.statistics = Statistics::default();
         self.messages.clear();
         self.peers_in_this_round.clear();
+    }
+
+    /// Returns the statistics.
+    pub fn statistics(&self) -> Statistics {
+        self.statistics
     }
 }
 
@@ -190,6 +205,79 @@ impl Debug for Gossip {
             formatter,
             "peers_in_this_round: {:?} }}",
             self.peers_in_this_round
+        )
+    }
+}
+
+
+/// Statistics on each gossiper.
+#[derive(Clone, Copy, Default)]
+pub struct Statistics {
+    /// Total rounds experienced (each push_tick is considered as one round).
+    pub rounds: u64,
+    /// Total empty pull sent from this gossiper.
+    pub empty_pull_sent: u64,
+    /// Total empty push sent from this gossiper.
+    pub empty_push_sent: u64,
+    /// Total full message sent from this gossiper.
+    pub full_message_sent: u64,
+    /// Total full message this gossiper received.
+    pub full_message_received: u64,
+}
+
+impl Statistics {
+    /// Create a default with u64::MAX
+    pub fn new_max() -> Self {
+        Statistics {
+            rounds: u64::MAX,
+            empty_pull_sent: u64::MAX,
+            empty_push_sent: u64::MAX,
+            full_message_sent: u64::MAX,
+            full_message_received: u64::MAX,
+        }
+    }
+
+    /// Add the value of other into self
+    pub fn add(&mut self, other: &Statistics) {
+        self.rounds += other.rounds;
+        self.empty_pull_sent += other.empty_pull_sent;
+        self.empty_push_sent += other.empty_push_sent;
+        self.full_message_sent += other.full_message_sent;
+        self.full_message_received += other.full_message_received;
+    }
+
+    /// Update self with the min of self and other
+    pub fn min(&mut self, other: &Statistics) {
+        self.rounds = cmp::min(self.rounds, other.rounds);
+        self.empty_pull_sent = cmp::min(self.empty_pull_sent, other.empty_pull_sent);
+        self.empty_push_sent = cmp::min(self.empty_push_sent, other.empty_push_sent);
+        self.full_message_sent = cmp::min(self.full_message_sent, other.full_message_sent);
+        self.full_message_received =
+            cmp::min(self.full_message_received, other.full_message_received);
+    }
+
+    /// Update self with the max of self and other
+    pub fn max(&mut self, other: &Statistics) {
+        self.rounds = cmp::max(self.rounds, other.rounds);
+        self.empty_pull_sent = cmp::max(self.empty_pull_sent, other.empty_pull_sent);
+        self.empty_push_sent = cmp::max(self.empty_push_sent, other.empty_push_sent);
+        self.full_message_sent = cmp::max(self.full_message_sent, other.full_message_sent);
+        self.full_message_received =
+            cmp::max(self.full_message_received, other.full_message_received);
+    }
+}
+
+impl Debug for Statistics {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "rounds: {},  empty pull sent: {},  empty push sent: {}, full messages sent: {},  \n
+             full messages received: {}",
+            self.rounds,
+            self.empty_pull_sent,
+            self.empty_push_sent,
+            self.full_message_sent,
+            self.full_message_received
         )
     }
 }
