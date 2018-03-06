@@ -118,7 +118,7 @@ impl Gossip {
         // Collect any responses required.
         let is_new_this_round = self.peers_in_this_round.insert(peer_id);
         let responses = if is_new_this_round && is_push {
-            self.messages
+            let mut responses: Vec<GossipRpc> = self.messages
                 .iter()
                 .filter_map(|(message, state)| {
                     // Filter out any for which `our_counter()` is `None`.
@@ -129,13 +129,21 @@ impl Gossip {
                         }
                     })
                 })
-                .collect()
+                .collect();
+            // Empty Pull notifies the peer that all messages in this node was in State A.
+            if responses.is_empty() {
+                responses.push(GossipRpc::Pull {
+                    msg: Vec::new(),
+                    counter: 0,
+                });
+            }
+            responses
         } else {
             vec![]
         };
 
-        // Empty push serves as a fetch request only, shall not be inserted into cache.
-        if !(is_push && message.is_empty() && counter == 0) {
+        // Empty Push & Pull shall not be inserted into cache.
+        if !(message.is_empty() && counter == 0) {
             // Add or update the entry for this message.
             match self.messages.entry(message) {
                 Entry::Occupied(mut entry) => entry.get_mut().receive(peer_id, counter),
