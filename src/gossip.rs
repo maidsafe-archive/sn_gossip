@@ -55,9 +55,9 @@ impl Gossip {
 
     pub fn add_peer(&mut self) {
         self.network_size += 1.0;
-        self.counter_max = cmp::max(1, self.network_size.ln().ln() as u8);
-        self.max_c_rounds = cmp::max(1, self.network_size.ln().ln() as u8);
-        self.max_rounds = cmp::max(1, self.network_size.ln() as u8);
+        self.counter_max = cmp::max(1, self.network_size.ln().ln().ceil() as u8);
+        self.max_c_rounds = cmp::max(1, self.network_size.ln().ln().ceil() as u8);
+        self.max_rounds = cmp::max(1, self.network_size.ln().ceil() as u8);
     }
 
     pub fn messages(&self) -> Vec<Vec<u8>> {
@@ -109,7 +109,8 @@ impl Gossip {
         };
 
         // Collect any responses required.
-        let responses = if self.peers_in_this_round.insert(peer_id) && is_push {
+        let is_new_this_round = self.peers_in_this_round.insert(peer_id);
+        let responses = if is_new_this_round && is_push {
             self.messages
                 .iter()
                 .filter_map(|(message, state)| {

@@ -37,15 +37,6 @@ pub struct Gossiper {
     statistics: Statistics,
 }
 
-// Push & Pull procedure is defined as:
-//      * Node A randomly picks a node B and sends hot_messages and a pull request to B.
-//      * When B received the pull request, it sends back its hot_messages + cold_messages
-// hot_message is definded as `message_counter <= ln(N)`
-// cold_message is defined as `ln(N) < message_counter <= 2ln(N)`
-// message_counter only get increased when during each round: the number of copies whose
-// message_counter is greater than ours, is more than those less than ours.
-// when `message_counter > 2ln(N)`, the message is no longer get pushed or pulled to another node.
-
 impl Gossiper {
     /// The ID of this `Gossiper`, i.e. its public key.
     pub fn id(&self) -> Id {
