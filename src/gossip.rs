@@ -140,6 +140,13 @@ impl Gossip {
 
         responses
     }
+
+    #[cfg(test)]
+    /// Clear the cache.
+    pub fn clear(&mut self) {
+        self.messages.clear();
+        self.peers_in_this_round.clear();
+    }
 }
 
 impl Debug for Gossip {

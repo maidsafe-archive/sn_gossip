@@ -117,6 +117,13 @@ impl Gossiper {
         self.statistics
     }
 
+    #[cfg(test)]
+    /// Clear the statistics and gossip's cache.
+    pub fn clear(&mut self) {
+        self.statistics = Statistics::default();
+        self.gossip.clear();
+    }
+
     fn prepare_to_send(&mut self, rpcs: Vec<GossipRpc>) -> Vec<Vec<u8>> {
         let mut messages = vec![];
         for rpc in rpcs {
@@ -244,8 +251,7 @@ mod tests {
         }
     }
 
-    fn send_messages(node_count: u32, num_of_msgs: u32) -> Metrics {
-        let mut rng = SeededRng::thread_rng();
+    fn create_network(node_count: u32) -> Vec<Gossiper> {
         let mut gossipers = itertools::repeat_call(Gossiper::default)
             .take(node_count as usize)
             .collect_vec();
@@ -258,6 +264,12 @@ mod tests {
                 let _ = gossipers[i].add_peer(rhs_id);
             }
         }
+        gossipers
+    }
+
+    fn send_messages(gossipers: &mut Vec<Gossiper>, num_of_msgs: u32) -> Metrics {
+        let mut rng = SeededRng::thread_rng();
+
         let mut rumors: Vec<String> = Vec::new();
         for _ in 0..num_of_msgs {
             let raw: Vec<u8> = rng.gen_iter().take(20).collect();
@@ -267,7 +279,7 @@ mod tests {
         // Inform the initial message.
         {
             assert!(num_of_msgs >= 1);
-            let gossiper = unwrap!(rand::thread_rng().choose_mut(&mut gossipers));
+            let gossiper = unwrap!(rand::thread_rng().choose_mut(gossipers));
             let rumor = unwrap!(rumors.pop());
             let _ = gossiper.send_new(&rumor);
         }
@@ -280,7 +292,7 @@ mod tests {
             processed = false;
             metrics.rounds += 1;
             let mut messages = BTreeMap::new();
-            for gossiper in &mut gossipers {
+            for gossiper in gossipers.iter_mut() {
                 if !rumors.is_empty() && rng.gen() {
                     let rumor = unwrap!(rumors.pop());
                     let _ = gossiper.send_new(&rumor);
@@ -312,22 +324,24 @@ mod tests {
             }
         }
 
-        // Checking nodes missed the message
-        for gossiper in &gossipers {
+        // Checking nodes missed the message, and clear the nodes for the next iteration.
+        for gossiper in gossipers.iter_mut() {
             if gossiper.messages().len() as u32 != num_of_msgs {
                 metrics.nodes_missed += 1;
                 metrics.msgs_missed += u64::from(num_of_msgs - gossiper.messages().len() as u32);
             }
+            gossiper.clear();
         }
         metrics
     }
 
-    #[test]
-    fn one_message() {
+    fn one_message_test(num_of_nodes: u32) {
+        let mut gossipers = create_network(num_of_nodes);
+        println!("network having {:?} nodes", num_of_nodes);
         let iterations = 1000;
         let mut metrics = Vec::new();
         for _ in 0..iterations {
-            metrics.push(send_messages(200, 1))
+            metrics.push(send_messages(&mut gossipers, 1))
         }
 
         let mut metrics_total = Metrics::default();
@@ -351,10 +365,27 @@ mod tests {
     }
 
     #[test]
+    fn one_message() {
+        one_message_test(20);
+        one_message_test(200);
+        one_message_test(2000);
+    }
+
+    #[test]
     fn multiple_messages() {
-        println!(
-            "network of 2000 nodes, sending 1000 messages. \n    {:?}",
-            send_messages(2000, 1000)
-        );
+        let num_of_nodes: Vec<u32> = vec![20, 200, 2000];
+        let num_of_msgs: Vec<u32> = vec![10, 100, 1000];
+        for nodes in &num_of_nodes {
+            for msgs in &num_of_msgs {
+                let mut gossipers = create_network(*nodes);
+                println!(
+                    "network having {:?} nodes, gossipping {:?} messages. \n    {:?}",
+                    nodes,
+                    msgs,
+                    send_messages(&mut gossipers, *msgs)
+                );
+            }
+        }
+
     }
 }
