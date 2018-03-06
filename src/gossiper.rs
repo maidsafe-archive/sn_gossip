@@ -272,12 +272,14 @@ mod tests {
         }
         println!(
             "    AVERAGE ---- \n         rounds: {}, empty_pulls: {}, empty_pushes: {}, \
-             full_msg_sent: {}, full_msg_received: {}, msg_missed: {}, nodes_missed: {}",
+             full_msg_sent: {}, full_msg_received: {}, transmissions: {}, msg_missed: {}, \
+             nodes_missed: {}",
             metrics_total.rounds / iterations,
             metrics_total.empty_pull_sent / iterations,
             metrics_total.empty_push_sent / iterations,
             metrics_total.full_message_sent / iterations,
             metrics_total.full_message_received / iterations,
+            metrics_total.transmissions / iterations,
             msgs_missed_total as f64 / iterations as f64,
             nodes_missed_total as f64 / iterations as f64
         );

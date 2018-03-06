@@ -108,6 +108,8 @@ impl Gossip {
                 msg: Vec::new(),
                 counter: 0,
             });
+        } else {
+            self.statistics.transmissions += 1;
         }
         push_list
     }
@@ -144,6 +146,8 @@ impl Gossip {
                     msg: Vec::new(),
                     counter: 0,
                 });
+            } else if message.is_empty() && counter == 0 {
+                self.statistics.transmissions += 1;
             }
             responses
         } else {
@@ -223,6 +227,10 @@ pub struct Statistics {
     pub full_message_sent: u64,
     /// Total full message this gossiper received.
     pub full_message_received: u64,
+    /// Only meaningful when gossiping only one message across the network
+    /// A transmission is defined as:
+    ///     Each information exchange between neighboring players in a round.
+    pub transmissions: u64,
 }
 
 impl Statistics {
@@ -234,6 +242,7 @@ impl Statistics {
             empty_push_sent: u64::MAX,
             full_message_sent: u64::MAX,
             full_message_received: u64::MAX,
+            transmissions: u64::MAX,
         }
     }
 
@@ -244,6 +253,7 @@ impl Statistics {
         self.empty_push_sent += other.empty_push_sent;
         self.full_message_sent += other.full_message_sent;
         self.full_message_received += other.full_message_received;
+        self.transmissions += other.transmissions;
     }
 
     /// Update self with the min of self and other
@@ -254,6 +264,7 @@ impl Statistics {
         self.full_message_sent = cmp::min(self.full_message_sent, other.full_message_sent);
         self.full_message_received =
             cmp::min(self.full_message_received, other.full_message_received);
+        self.transmissions = cmp::min(self.transmissions, other.transmissions);
     }
 
     /// Update self with the max of self and other
@@ -264,6 +275,7 @@ impl Statistics {
         self.full_message_sent = cmp::max(self.full_message_sent, other.full_message_sent);
         self.full_message_received =
             cmp::max(self.full_message_received, other.full_message_received);
+        self.transmissions = cmp::max(self.transmissions, other.transmissions);
     }
 }
 
@@ -271,13 +283,14 @@ impl Debug for Statistics {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "rounds: {},  empty pull sent: {},  empty push sent: {}, full messages sent: {},  \n
-             full messages received: {}",
+            "rounds: {},  empty pull sent: {},  empty push sent: {}, full messages sent: {},  \
+             full messages received: {}, transmissions: {}",
             self.rounds,
             self.empty_pull_sent,
             self.empty_push_sent,
             self.full_message_sent,
-            self.full_message_received
+            self.full_message_received,
+            self.transmissions
         )
     }
 }
