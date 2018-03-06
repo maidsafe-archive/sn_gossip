@@ -47,16 +47,18 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate sha3;
-extern crate tiny_keccak;
 #[cfg(test)]
 #[macro_use]
 #[cfg(test)]
 extern crate unwrap;
 
 mod error;
-mod gossip_median_with_round;
+mod gossip;
+mod gossiper;
 mod id;
+mod messages;
+mod message_state;
 
 pub use error::Error;
-pub use gossip_median_with_round::gossiper::{Gossiper, Statistics};
+pub use gossiper::{Gossiper, Statistics};
 pub use id::Id;
