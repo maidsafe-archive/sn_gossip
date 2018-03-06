@@ -271,7 +271,7 @@ mod tests {
             metrics_min.min(&metric);
         }
         println!(
-            "    AVERAGE ---- \n         rounds: {}, empyt_pulls: {}, empty_pushes: {}, \
+            "    AVERAGE ---- \n         rounds: {}, empty_pulls: {}, empty_pushes: {}, \
              full_msg_sent: {}, full_msg_received: {}, msg_missed: {}, nodes_missed: {}",
             metrics_total.rounds / iterations,
             metrics_total.empty_pull_sent / iterations,
@@ -285,7 +285,6 @@ mod tests {
         print_metric(nodes_missed_min, msgs_missed_min, &metrics_min);
         println!("    MAX ----  ", );
         print_metric(nodes_missed_max, msgs_missed_max, &metrics_max);
-
     }
 
     fn print_metric(mut nodes_missed: u64, mut msgs_missed: u64, stat: &Statistics) {
@@ -294,7 +293,7 @@ mod tests {
             msgs_missed = 0;
         }
         println!(
-            "        rounds: {}, empyt_pulls: {}, empty_pushes: {}, full_msg_sent: {}, \
+            "        rounds: {}, empty_pulls: {}, empty_pushes: {}, full_msg_sent: {}, \
              full_msg_received: {}, msg_missed: {}, nodes_missed: {}",
             stat.rounds,
             stat.empty_pull_sent,
@@ -320,7 +319,7 @@ mod tests {
         for nodes in &num_of_nodes {
             for msgs in &num_of_msgs {
                 println!(
-                    "network having {:?} nodes, gossipping {:?} messages.",
+                    "network having {:?} nodes, gossiping {:?} messages.",
                     nodes,
                     msgs
                 );
