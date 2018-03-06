@@ -289,8 +289,11 @@ mod tests {
                     let _ = gossiper.send_new(&rumor);
                 }
                 let (dst, msgs) = unwrap!(gossiper.next_round());
-                if !msgs.is_empty() {
-                    metrics.pushes += msgs.len() as u64;
+                metrics.pushes += msgs.len() as u64;
+                // The empty Push results a message with length of 13.
+                // To avoid parsing the message, here use a hard coded message length to detect
+                // whether there is valid message copy to be exchanged.
+                if msgs.iter().any(|msg| msg.len() > 13) {
                     processed = true;
                 }
                 let _ = messages.insert((gossiper.id(), dst), msgs);
@@ -305,7 +308,10 @@ mod tests {
                     for msg in msgs {
                         result.extend(target.handle_received_message(&src, &msg));
                     }
-                    if !result.is_empty() {
+                    // The empty Pull results a message with length of 13.
+                    // To avoid parsing the message, here use a hard coded message length to detect
+                    // whether there is valid message copy to be exchanged.
+                    if result.iter().any(|msg| msg.len() > 13) {
                         has_response = true;
                     }
                     metrics.pulls += result.len() as u64;

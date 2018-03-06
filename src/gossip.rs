@@ -96,6 +96,13 @@ impl Gossip {
             })
             .collect();
         self.peers_in_this_round.clear();
+        // Sends an empty Push in case of nothing to push. It acts as a fetch request to peer.
+        if push_list.is_empty() {
+            push_list.push(GossipRpc::Push {
+                msg: Vec::new(),
+                counter: 0,
+            });
+        }
         push_list
     }
 
@@ -111,7 +118,7 @@ impl Gossip {
         // Collect any responses required.
         let is_new_this_round = self.peers_in_this_round.insert(peer_id);
         let responses = if is_new_this_round && is_push {
-            self.messages
+            let mut responses: Vec<GossipRpc> = self.messages
                 .iter()
                 .filter_map(|(message, state)| {
                     // Filter out any for which `our_counter()` is `None`.
@@ -122,20 +129,31 @@ impl Gossip {
                         }
                     })
                 })
-                .collect()
+                .collect();
+            // Empty Pull notifies the peer that all messages in this node was in State A.
+            if responses.is_empty() {
+                responses.push(GossipRpc::Pull {
+                    msg: Vec::new(),
+                    counter: 0,
+                });
+            }
+            responses
         } else {
             vec![]
         };
 
-        // Add or update the entry for this message.
-        match self.messages.entry(message) {
-            Entry::Occupied(mut entry) => entry.get_mut().receive(peer_id, counter),
-            Entry::Vacant(entry) => {
-                let _ = entry.insert(MessageState::new_from_peer(
-                    peer_id,
-                    counter,
-                    self.counter_max,
-                ));
+        // Empty Push & Pull shall not be inserted into cache.
+        if !(message.is_empty() && counter == 0) {
+            // Add or update the entry for this message.
+            match self.messages.entry(message) {
+                Entry::Occupied(mut entry) => entry.get_mut().receive(peer_id, counter),
+                Entry::Vacant(entry) => {
+                    let _ = entry.insert(MessageState::new_from_peer(
+                        peer_id,
+                        counter,
+                        self.counter_max,
+                    ));
+                }
             }
         }
 
