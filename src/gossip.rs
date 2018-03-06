@@ -96,6 +96,13 @@ impl Gossip {
             })
             .collect();
         self.peers_in_this_round.clear();
+        // Sends an empty Push in case of nothing to push. It acts as a fetch request to peer.
+        if push_list.is_empty() {
+            push_list.push(GossipRpc::Push {
+                msg: Vec::new(),
+                counter: 0,
+            });
+        }
         push_list
     }
 
@@ -127,15 +134,18 @@ impl Gossip {
             vec![]
         };
 
-        // Add or update the entry for this message.
-        match self.messages.entry(message) {
-            Entry::Occupied(mut entry) => entry.get_mut().receive(peer_id, counter),
-            Entry::Vacant(entry) => {
-                let _ = entry.insert(MessageState::new_from_peer(
-                    peer_id,
-                    counter,
-                    self.counter_max,
-                ));
+        // Empty push serves as a fetch request only, shall not be inserted into cache.
+        if !(is_push && message.is_empty() && counter == 0) {
+            // Add or update the entry for this message.
+            match self.messages.entry(message) {
+                Entry::Occupied(mut entry) => entry.get_mut().receive(peer_id, counter),
+                Entry::Vacant(entry) => {
+                    let _ = entry.insert(MessageState::new_from_peer(
+                        peer_id,
+                        counter,
+                        self.counter_max,
+                    ));
+                }
             }
         }
 
