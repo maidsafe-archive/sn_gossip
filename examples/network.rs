@@ -222,10 +222,10 @@ impl Node {
         if !self.is_in_round {
             self.is_in_round = true;
 
-            let (peer_id, msgs_to_send) = unwrap!(self.gossiper.next_round());
-            if let Some(message_stream) = self.peers.get_mut(&peer_id) {
-                // Buffer the messages to be sent.
-                for msg in msgs_to_send {
+            let msgs_to_send = unwrap!(self.gossiper.next_round());
+            for (peer_id, msg) in msgs_to_send {
+                if let Some(message_stream) = self.peers.get_mut(&peer_id) {
+                    // Buffer the messages to be sent.
                     message_stream.buffer(&msg);
                 }
             }

@@ -60,16 +60,23 @@ impl Gossiper {
         Ok(())
     }
 
-    /// Start a new round.  Returns a vector of Push RPCs messages to be sent to the given peer.
-    pub fn next_round(&mut self) -> Result<(Id, Vec<Vec<u8>>), Error> {
-        let peer_id = match rand::thread_rng().choose(&self.peers) {
-            Some(id) => *id,
-            None => return Err(Error::NoPeers),
-        };
+    /// Start a new round.  Returns a vector of Push RPCs messages to be sent to the given peers.
+    pub fn next_round(&mut self) -> Result<Vec<(Id, Vec<u8>)>, Error> {
+        if self.peers.is_empty() {
+            return Err(Error::NoPeers);
+        }
         let push_list = self.gossip.next_round();
-        let messages = self.prepare_to_send(push_list);
-        debug!("{:?} Sending Push messages to {:?}", self, peer_id);
-        Ok((peer_id, messages))
+        Ok(
+            self.prepare_to_send(push_list)
+                .into_iter()
+                .map(|message| {
+                    // Safe to unwrap here as we return above if self.peers.is_empty() is true.
+                    let peer_id = unwrap!(rand::thread_rng().choose(&self.peers));
+                    debug!("{:?} Sending Push messages to {:?}", self, peer_id);
+                    (*peer_id, message)
+                })
+                .collect(),
+        )
     }
 
     /// Handles an incoming message from peer.
@@ -146,7 +153,6 @@ mod tests {
     use maidsafe_utilities::SeededRng;
     use rand::{self, Rng};
     use std::{cmp, u64};
-    use std::collections::BTreeMap;
 
     fn create_network(node_count: u32) -> Vec<Gossiper> {
         let mut gossipers = itertools::repeat_call(Gossiper::default)
@@ -166,6 +172,13 @@ mod tests {
 
     fn send_messages(gossipers: &mut Vec<Gossiper>, num_of_msgs: u32) -> (u64, u64, Statistics) {
         let mut rng = SeededRng::thread_rng();
+        let empty_rpc_len = unwrap!(Message::serialise(
+            &GossipRpc::Push {
+                msg: vec![],
+                counter: 0,
+            },
+            &gossipers[0].keys,
+        )).len();
 
         let mut rumors: Vec<String> = Vec::new();
         for _ in 0..num_of_msgs {
@@ -185,40 +198,31 @@ mod tests {
         let mut processed = true;
         while processed {
             processed = false;
-            let mut messages = BTreeMap::new();
+            let mut messages = vec![];
+            // Call `next_round()` on each node to gather a list of all Push RPCs.
             for gossiper in gossipers.iter_mut() {
                 if !rumors.is_empty() && rng.gen() {
                     let rumor = unwrap!(rumors.pop());
                     let _ = gossiper.send_new(&rumor);
                 }
-                let (dst, msgs) = unwrap!(gossiper.next_round());
-                // The empty Push results a message with length of 13.
-                // To avoid parsing the message, here use a hard coded message length to detect
-                // whether there is valid message copy to be exchanged.
-                if msgs.iter().any(|msg| msg.len() > 13) {
-                    processed = true;
+                let push_msgs = unwrap!(gossiper.next_round());
+                for (dst_id, push_msg) in push_msgs {
+                    // Any non-empty Push RPC will have a length more than `empty_rpc_len`.
+                    if push_msg.len() > empty_rpc_len {
+                        processed = true;
+                    }
+                    messages.push((gossiper.id(), dst_id, push_msg));
                 }
-                let _ = messages.insert((gossiper.id(), dst), msgs);
             }
-            let mut has_response = true;
-            while has_response {
-                has_response = false;
-                let mut responses = BTreeMap::new();
-                for ((src, dst), msgs) in messages {
-                    let mut target = unwrap!(gossipers.iter_mut().find(|g| g.id() == dst));
-                    let mut result = Vec::new();
-                    for msg in msgs {
-                        result.extend(target.handle_received_message(&src, &msg));
-                    }
-                    // The empty Pull results a message with length of 13.
-                    // To avoid parsing the message, here use a hard coded message length to detect
-                    // whether there is valid message copy to be exchanged.
-                    if result.iter().any(|msg| msg.len() > 13) {
-                        has_response = true;
-                    }
-                    let _ = responses.insert((dst, src), result);
+
+            // Send all Push RPCs and the corresponding Pull RPCs
+            for (src_id, dst_id, push_msg) in messages {
+                let pull_msgs = unwrap!(gossipers.iter_mut().find(|node| node.id() == dst_id))
+                    .handle_received_message(&src_id, &push_msg);
+                let mut src = unwrap!(gossipers.iter_mut().find(|node| node.id() == src_id));
+                for pull_msg in pull_msgs {
+                    assert!(src.handle_received_message(&dst_id, &pull_msg).is_empty());
                 }
-                messages = responses;
             }
         }
 
@@ -248,11 +252,11 @@ mod tests {
 
     fn one_message_test(num_of_nodes: u32) {
         let mut gossipers = create_network(num_of_nodes);
-        println!("network having {:?} nodes", num_of_nodes);
+        println!("Network of {} nodes:", num_of_nodes);
         let iterations = 1000;
         let mut metrics = Vec::new();
         for _ in 0..iterations {
-            metrics.push(send_messages(&mut gossipers, 1))
+            metrics.push(send_messages(&mut gossipers, 1));
         }
 
         let mut metrics_total = Statistics::default();
@@ -277,18 +281,19 @@ mod tests {
             metrics_min.min(&metric);
         }
         println!(
-            "    AVERAGE ---- \n         rounds: {}, empty_pulls: {}, empty_pushes: {}, \
-             full_msg_sent: {}, msg_missed: {}, nodes_missed: {}",
+            "    AVERAGE ---- rounds: {}, empty_pulls: {}, empty_pushes: {}, \
+             full_msgs_sent: {}, msgs_missed: {}, nodes_missed: {} ({:.2}%)",
             metrics_total.rounds / iterations,
             metrics_total.empty_pull_sent / iterations,
             metrics_total.empty_push_sent / iterations,
             metrics_total.full_message_sent / iterations,
             msgs_missed_total as f64 / iterations as f64,
-            nodes_missed_total as f64 / iterations as f64
+            nodes_missed_total as f64 / iterations as f64,
+            (100 * nodes_missed_total) as f64 / iterations as f64 / f64::from(num_of_nodes)
         );
-        println!("    MIN ----  ", );
+        print!("    MIN -------- ", );
         print_metric(nodes_missed_min, msgs_missed_min, &metrics_min);
-        println!("    MAX ----  ", );
+        print!("    MAX -------- ", );
         print_metric(nodes_missed_max, msgs_missed_max, &metrics_max);
     }
 
@@ -298,7 +303,7 @@ mod tests {
             msgs_missed = 0;
         }
         println!(
-            "        rounds: {}, empty_pulls: {}, empty_pushes: {}, full_msg_sent: {}, \
+            "rounds: {}, empty_pulls: {}, empty_pushes: {}, full_msg_sent: {}, \
              msg_missed: {}, nodes_missed: {}",
             stat.rounds,
             stat.empty_pull_sent,
