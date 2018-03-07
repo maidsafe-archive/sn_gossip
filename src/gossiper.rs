@@ -237,6 +237,12 @@ mod tests {
             }
             gossiper.clear();
         }
+
+        // The empty push & pull sent during the last round to confirm the gossiping is completed
+        // shall not be included in the statistics.
+        statistics.empty_pull_sent -= gossipers.len() as u64;
+        statistics.empty_push_sent -= gossipers.len() as u64;
+
         (nodes_missed, msgs_missed, statistics)
     }
 
@@ -272,12 +278,11 @@ mod tests {
         }
         println!(
             "    AVERAGE ---- \n         rounds: {}, empty_pulls: {}, empty_pushes: {}, \
-             full_msg_sent: {}, full_msg_received: {}, msg_missed: {}, nodes_missed: {}",
+             full_msg_sent: {}, msg_missed: {}, nodes_missed: {}",
             metrics_total.rounds / iterations,
             metrics_total.empty_pull_sent / iterations,
             metrics_total.empty_push_sent / iterations,
             metrics_total.full_message_sent / iterations,
-            metrics_total.full_message_received / iterations,
             msgs_missed_total as f64 / iterations as f64,
             nodes_missed_total as f64 / iterations as f64
         );
@@ -294,12 +299,11 @@ mod tests {
         }
         println!(
             "        rounds: {}, empty_pulls: {}, empty_pushes: {}, full_msg_sent: {}, \
-             full_msg_received: {}, msg_missed: {}, nodes_missed: {}",
+             msg_missed: {}, nodes_missed: {}",
             stat.rounds,
             stat.empty_pull_sent,
             stat.empty_push_sent,
             stat.full_message_sent,
-            stat.full_message_received,
             msgs_missed,
             nodes_missed
         );
