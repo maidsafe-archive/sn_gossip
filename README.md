@@ -2,6 +2,11 @@
 
 An implementation of a push-pull gossip protocol described in [Randomized Rumor Spreading - Karp et al. [FOCS 2000]](http://zoo.cs.yale.edu/classes/cs426/2013/bib/karp00randomized.pdf).
 
+
+## Evaluation Result
+
+![gossip](https://github.com/maidsafe/safe_gossip/blob/master/img/evaluate_result.png?raw=true)
+
 ## License
 
 Licensed under either of
