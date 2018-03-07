@@ -47,9 +47,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate sha3;
-#[cfg(test)]
 #[macro_use]
-#[cfg(test)]
 extern crate unwrap;
 
 mod error;
