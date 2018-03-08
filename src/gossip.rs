@@ -157,11 +157,7 @@ impl Gossip {
             match self.messages.entry(message) {
                 Entry::Occupied(mut entry) => entry.get_mut().receive(peer_id, counter),
                 Entry::Vacant(entry) => {
-                    let _ = entry.insert(MessageState::new_from_peer(
-                        peer_id,
-                        counter,
-                        self.counter_max,
-                    ));
+                    let _ = entry.insert(MessageState::new_from_peer(counter, self.counter_max));
                 }
             }
         }
