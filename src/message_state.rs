@@ -59,14 +59,12 @@ impl MessageState {
     /// Construct a new `MessageState` where we've received the message from a peer.  If that peer
     /// is in state B (`counter < counter_max`) we start in state B with `our_counter` set to `1`.
     /// If the peer is in state C, we start in state C too.
-    pub fn new_from_peer(peer_id: Id, counter: u8, counter_max: u8) -> Self {
+    pub fn new_from_peer(counter: u8, counter_max: u8) -> Self {
         if counter < counter_max {
-            let mut peer_counters = BTreeMap::new();
-            let _ = peer_counters.insert(peer_id, counter);
             return MessageState::B {
                 round: 0,
                 our_counter: 1,
-                peer_counters,
+                peer_counters: BTreeMap::new(),
             };
         }
         MessageState::C {
