@@ -8,12 +8,7 @@ An implementation of a push-pull gossip protocol described in [Randomized Rumor 
 
 ## License
 
-Licensed under either of
-
-* the MaidSafe.net Commercial License, version 1.0 or later ([LICENSE](LICENSE))
-* the General Public License (GPL), version 3 ([COPYING](COPYING) or http://www.gnu.org/licenses/gpl-3.0.en.html)
-
-at your option.
+This SAFE Network library is licensed under the General Public License (GPL), version 3 ([LICENSE](LICENSE) http://www.gnu.org/licenses/gpl-3.0.en.html).
 
 ## Contribution
 
