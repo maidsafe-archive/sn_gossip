@@ -18,9 +18,9 @@
 //! Run a local network of gossiper nodes.
 
 #![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
-          unknown_crate_types, warnings)]
-#![deny(bad_style, deprecated, improper_ctypes, missing_docs, non_shorthand_field_patterns,
-        overflowing_literals, plugin_as_library, private_no_mangle_fns, private_no_mangle_statics,
+          unknown_crate_types)]
+#![deny(bad_style, improper_ctypes, missing_docs, non_shorthand_field_patterns,
+        overflowing_literals, plugin_as_library,
         stable_features, unconditional_recursion, unknown_lints, unsafe_code, unused_allocation,
         unused_attributes, unused_comparisons, unused_features, unused_parens, while_true, unused)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
@@ -28,20 +28,14 @@
 #![allow(box_pointers, missing_copy_implementations, missing_debug_implementations,
          variant_size_differences, non_camel_case_types)]
 
-extern crate bytes;
+
 #[macro_use]
 extern crate futures;
-extern crate futures_cpupool;
-extern crate itertools;
-extern crate maidsafe_utilities;
-extern crate rand;
-extern crate safe_gossip;
-extern crate tokio;
+use rand;
 #[macro_use]
 extern crate tokio_io;
 #[macro_use]
 extern crate unwrap;
-
 use bytes::{BufMut, BytesMut};
 use futures::{Async, Future, Poll, Stream};
 use futures::sync::mpsc;
@@ -49,6 +43,7 @@ use futures_cpupool::{CpuFuture, CpuPool};
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use rand::Rng;
+use rand::distributions::Alphanumeric;
 use safe_gossip::{Error, Gossiper, Id, Statistics};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -315,7 +310,7 @@ impl Future for Node {
 }
 
 impl Debug for Node {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "{:?} - {:?}", thread::current().id(), self.id())
     }
 }
@@ -354,7 +349,7 @@ impl Network {
             stats: HashMap::new(),
             node_futures: vec![],
             client_messages: vec![],
-            termination_message: rand::thread_rng().gen_ascii_chars().take(20).collect(),
+            termination_message: rand::thread_rng().sample_iter(&Alphanumeric).take(20).collect(),
         };
 
         let mut nodes = vec![];
