@@ -6,9 +6,10 @@ An implementation of a push-pull gossip protocol described in [Randomized Rumor 
 
 ![gossip](img/evaluate_result.png?raw=true)
 
-## License
 
-This SAFE Network library is licensed under the General Public License (GPL), version 3 ([LICENSE](LICENSE) http://www.gnu.org/licenses/gpl-3.0.en.html).
+<a name="license"></a>
+## License
+This library is dual-licensed under the Modified BSD ( [LICENSE-BSD](https://opensource.org/licenses/BSD-3-Clause)) or the MIT license ( [LICENSE-MIT](http://opensource.org/licenses/MIT)) at your option.
 
 ## Contribution
 

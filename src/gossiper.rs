@@ -1,27 +1,19 @@
 // Copyright 2018 MaidSafe.net limited.
 //
-// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
-// licence you accepted on initial access to the Software (the "Licences").
-//
-// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
-// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
-//
-// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.
-//
-// Please review the Licences for the specific language governing permissions and limitations
-// relating to use of the SAFE Network Software.
+// This SAFE Network Software is licensed to you under the MIT license <LICENSE-MIT
+// http://opensource.org/licenses/MIT> or the Modified BSD license <LICENSE-BSD
+// https://opensource.org/licenses/BSD-3-Clause>, at your option. This file may not be copied,
+// modified, or distributed except according to those terms. Please review the Licences for the
+// specific language governing permissions and limitations relating to use of the SAFE Network
+// Software.
 
 use super::gossip::{Gossip, Statistics};
 use super::messages::{GossipRpc, Message};
+use bincode::serialize;
 use ed25519_dalek::{Keypair, PublicKey};
-use error::Error;
-use id::Id;
-use maidsafe_utilities::serialisation;
-use rand::{self, Rng};
+use crate::error::Error;
+use crate::id::Id;
+use rand::seq::SliceRandom;
 use serde::ser::Serialize;
 use sha3::Sha3_512;
 use std::fmt::{self, Debug, Formatter};
@@ -56,7 +48,7 @@ impl Gossiper {
         if self.peers.is_empty() {
             return Err(Error::NoPeers);
         }
-        self.gossip.new_message(serialisation::serialise(message)?);
+        self.gossip.new_message(serialize(message)?);
         Ok(())
     }
 
@@ -68,7 +60,8 @@ impl Gossiper {
     /// comprising several messages).  However, if we send each Push RPC to a different peer, we'd
     /// receive 100 tranches of Pull RPCs.
     pub fn next_round(&mut self) -> Result<(Id, Vec<Vec<u8>>), Error> {
-        let peer_id = match rand::thread_rng().choose(&self.peers) {
+        let mut rng = rand::thread_rng();
+        let peer_id = match self.peers.choose(& mut rng) {
             Some(id) => *id,
             None => return Err(Error::NoPeers),
         };
@@ -130,7 +123,7 @@ impl Gossiper {
 impl Default for Gossiper {
     fn default() -> Self {
         let mut rng = rand::thread_rng();
-        let keys = Keypair::generate::<Sha3_512>(&mut rng);
+        let keys = Keypair::generate::<Sha3_512, _>(&mut rng);
         Gossiper {
             keys,
             peers: vec![],
@@ -140,7 +133,7 @@ impl Default for Gossiper {
 }
 
 impl Debug for Gossiper {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "{:?}", self.id())
     }
 }
@@ -148,14 +141,14 @@ impl Debug for Gossiper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use itertools::{self, Itertools};
-    use maidsafe_utilities::SeededRng;
+    use itertools::Itertools;
     use rand::{self, Rng};
+    use rand::seq::SliceRandom;
     use std::{cmp, u64};
     use std::collections::BTreeMap;
 
     fn create_network(node_count: u32) -> Vec<Gossiper> {
-        let mut gossipers = itertools::repeat_call(Gossiper::default)
+        let mut gossipers = std::iter::repeat_with(Gossiper::default)
             .take(node_count as usize)
             .collect_vec();
         // Connect all the gossipers.
@@ -171,7 +164,7 @@ mod tests {
     }
 
     fn send_messages(gossipers: &mut Vec<Gossiper>, num_of_msgs: u32) -> (u64, u64, Statistics) {
-        let mut rng = SeededRng::thread_rng();
+        let mut rng = rand::thread_rng();
         let empty_rpc_len = unwrap!(Message::serialise(
             &GossipRpc::Push {
                 msg: vec![],
@@ -182,14 +175,15 @@ mod tests {
 
         let mut rumors: Vec<String> = Vec::new();
         for _ in 0..num_of_msgs {
-            let raw: Vec<u8> = rng.gen_iter().take(20).collect();
+            let mut raw = [0u8;20];
+            rng.fill(&mut raw[..]);
             rumors.push(String::from_utf8_lossy(&raw).to_string());
         }
 
         // Inform the initial message.
         {
             assert!(num_of_msgs >= 1);
-            let gossiper = unwrap!(rand::thread_rng().choose_mut(gossipers));
+            let gossiper = unwrap!(gossipers.choose_mut(&mut rng));
             let rumor = unwrap!(rumors.pop());
             let _ = gossiper.send_new(&rumor);
         }
@@ -217,7 +211,7 @@ mod tests {
             for ((src_id, dst_id), push_msgs) in messages {
                 let mut pull_msgs = vec![];
                 {
-                    let mut dst = unwrap!(gossipers.iter_mut().find(|node| node.id() == dst_id));
+                    let dst = unwrap!(gossipers.iter_mut().find(|node| node.id() == dst_id));
                     // Only the first Push from this peer should return any Pulls.
                     for (index, push_msg) in push_msgs.into_iter().enumerate() {
                         if index == 0 {
@@ -227,7 +221,7 @@ mod tests {
                         }
                     }
                 }
-                let mut src = unwrap!(gossipers.iter_mut().find(|node| node.id() == src_id));
+                let src = unwrap!(gossipers.iter_mut().find(|node| node.id() == src_id));
                 for pull_msg in pull_msgs {
                     assert!(src.handle_received_message(&dst_id, &pull_msg).is_empty());
                 }
