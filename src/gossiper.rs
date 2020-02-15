@@ -9,10 +9,10 @@
 
 use super::gossip::{Gossip, Statistics};
 use super::messages::{GossipRpc, Message};
-use bincode::serialize;
-use ed25519_dalek::{Keypair, PublicKey};
 use crate::error::Error;
 use crate::id::Id;
+use bincode::serialize;
+use ed25519_dalek::{Keypair, PublicKey};
 use rand::seq::SliceRandom;
 use serde::ser::Serialize;
 use sha3::Sha3_512;
@@ -61,7 +61,7 @@ impl Gossiper {
     /// receive 100 tranches of Pull RPCs.
     pub fn next_round(&mut self) -> Result<(Id, Vec<Vec<u8>>), Error> {
         let mut rng = rand::thread_rng();
-        let peer_id = match self.peers.choose(& mut rng) {
+        let peer_id = match self.peers.choose(&mut rng) {
             Some(id) => *id,
             None => return Err(Error::NoPeers),
         };
@@ -142,10 +142,10 @@ impl Debug for Gossiper {
 mod tests {
     use super::*;
     use itertools::Itertools;
-    use rand::{self, Rng};
     use rand::seq::SliceRandom;
-    use std::{cmp, u64};
+    use rand::{self, Rng};
     use std::collections::BTreeMap;
+    use std::{cmp, u64};
 
     fn create_network(node_count: u32) -> Vec<Gossiper> {
         let mut gossipers = std::iter::repeat_with(Gossiper::default)
@@ -171,11 +171,12 @@ mod tests {
                 counter: 0,
             },
             &gossipers[0].keys,
-        )).len();
+        ))
+        .len();
 
         let mut rumors: Vec<String> = Vec::new();
         for _ in 0..num_of_msgs {
-            let mut raw = [0u8;20];
+            let mut raw = [0u8; 20];
             rng.fill(&mut raw[..]);
             rumors.push(String::from_utf8_lossy(&raw).to_string());
         }
@@ -325,7 +326,7 @@ mod tests {
     ) {
         println!(
             "rounds: {}, empty_pulls: {}, empty_pushes: {}, full_msgs_sent: {}, msgs_missed: {} \
-            ({:.2}%), nodes_missed: {} ({:.2}%)",
+             ({:.2}%), nodes_missed: {} ({:.2}%)",
             stats.rounds,
             stats.empty_pull_sent,
             stats.empty_push_sent,
@@ -352,8 +353,7 @@ mod tests {
             for msgs in &num_of_msgs {
                 print!(
                     "Network of {} nodes, gossiping {} messages:\n\t",
-                    nodes,
-                    msgs
+                    nodes, msgs
                 );
                 let mut gossipers = create_network(*nodes);
                 let metric = send_messages(&mut gossipers, *msgs);

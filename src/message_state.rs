@@ -8,8 +8,8 @@
 // Software.
 
 use crate::id::Id;
-use std::collections::{BTreeMap, BTreeSet};
 use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// This represents the state of a single message from this node's perspective.
 #[derive(Debug)]
@@ -67,7 +67,11 @@ impl MessageState {
 
     /// Receive a copy of this message from `peer_id` with `counter`.
     pub fn receive(&mut self, peer_id: Id, counter: u8) {
-        if let MessageState::B { ref mut peer_counters, .. } = *self {
+        if let MessageState::B {
+            ref mut peer_counters,
+            ..
+        } = *self
+        {
             if peer_counters.insert(peer_id, counter).is_some() {
                 debug!("Received the same message more than once this round from a given peer");
             }
