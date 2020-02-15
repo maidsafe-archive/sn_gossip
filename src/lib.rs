@@ -9,21 +9,54 @@
 
 //! An implementation of a push-pull gossip protocol.
 
-#![doc(html_logo_url =
-           "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
-       html_favicon_url = "https://maidsafe.net/img/favicon.ico",
-       html_root_url = "https://docs.rs/safe_gossip")]
-
-#![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
-          unknown_crate_types, warnings)]
-#![deny(bad_style, deprecated, improper_ctypes, missing_docs, non_shorthand_field_patterns,
-        overflowing_literals, plugin_as_library,
-        stable_features, unconditional_recursion, unknown_lints, unsafe_code, unused_allocation,
-        unused_attributes, unused_comparisons, unused_features, unused_parens, while_true, unused)]
-#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results)]
-#![allow(box_pointers, missing_copy_implementations, missing_debug_implementations,
-         unused_extern_crates, variant_size_differences, non_camel_case_types)]
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
+    html_favicon_url = "https://maidsafe.net/img/favicon.ico",
+    html_root_url = "https://docs.rs/safe_gossip"
+)]
+#![forbid(
+    exceeding_bitshifts,
+    mutable_transmutes,
+    no_mangle_const_items,
+    unknown_crate_types,
+    warnings
+)]
+#![deny(
+    bad_style,
+    deprecated,
+    improper_ctypes,
+    missing_docs,
+    non_shorthand_field_patterns,
+    overflowing_literals,
+    plugin_as_library,
+    stable_features,
+    unconditional_recursion,
+    unknown_lints,
+    unsafe_code,
+    unused_allocation,
+    unused_attributes,
+    unused_comparisons,
+    unused_features,
+    unused_parens,
+    while_true,
+    unused
+)]
+#![warn(
+    trivial_casts,
+    trivial_numeric_casts,
+    unused_extern_crates,
+    unused_import_braces,
+    unused_qualifications,
+    unused_results
+)]
+#![allow(
+    box_pointers,
+    missing_copy_implementations,
+    missing_debug_implementations,
+    unused_extern_crates,
+    variant_size_differences,
+    non_camel_case_types
+)]
 
 #[cfg(test)]
 extern crate itertools;
@@ -41,8 +74,8 @@ mod error;
 mod gossip;
 mod gossiper;
 mod id;
-mod messages;
 mod message_state;
+mod messages;
 
 pub use crate::error::Error;
 pub use crate::gossip::Statistics;

@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use ed25519_dalek::{PUBLIC_KEY_LENGTH, PublicKey};
+use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
 use std::convert::From;
 use std::fmt::{self, Debug, Formatter};
 
@@ -26,9 +26,7 @@ impl Debug for Id {
         write!(
             formatter,
             "{:02x}{:02x}{:02x}..",
-            self.0[0],
-            self.0[1],
-            self.0[2]
+            self.0[0], self.0[1], self.0[2]
         )
     }
 }

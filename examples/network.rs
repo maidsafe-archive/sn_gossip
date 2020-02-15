@@ -17,17 +17,46 @@
 
 //! Run a local network of gossiper nodes.
 
-#![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
-          unknown_crate_types)]
-#![deny(bad_style, improper_ctypes, missing_docs, non_shorthand_field_patterns,
-        overflowing_literals, plugin_as_library,
-        stable_features, unconditional_recursion, unknown_lints, unsafe_code, unused_allocation,
-        unused_attributes, unused_comparisons, unused_features, unused_parens, while_true, unused)]
-#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results)]
-#![allow(box_pointers, missing_copy_implementations, missing_debug_implementations,
-         variant_size_differences, non_camel_case_types)]
-
+#![forbid(
+    exceeding_bitshifts,
+    mutable_transmutes,
+    no_mangle_const_items,
+    unknown_crate_types
+)]
+#![deny(
+    bad_style,
+    improper_ctypes,
+    missing_docs,
+    non_shorthand_field_patterns,
+    overflowing_literals,
+    plugin_as_library,
+    stable_features,
+    unconditional_recursion,
+    unknown_lints,
+    unsafe_code,
+    unused_allocation,
+    unused_attributes,
+    unused_comparisons,
+    unused_features,
+    unused_parens,
+    while_true,
+    unused
+)]
+#![warn(
+    trivial_casts,
+    trivial_numeric_casts,
+    unused_extern_crates,
+    unused_import_braces,
+    unused_qualifications,
+    unused_results
+)]
+#![allow(
+    box_pointers,
+    missing_copy_implementations,
+    missing_debug_implementations,
+    variant_size_differences,
+    non_camel_case_types
+)]
 
 #[macro_use]
 extern crate futures;
@@ -37,13 +66,13 @@ extern crate tokio_io;
 #[macro_use]
 extern crate unwrap;
 use bytes::{BufMut, BytesMut};
-use futures::{Async, Future, Poll, Stream};
 use futures::sync::mpsc;
+use futures::{Async, Future, Poll, Stream};
 use futures_cpupool::{CpuFuture, CpuPool};
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
-use rand::Rng;
 use rand::distributions::Alphanumeric;
+use rand::Rng;
 use safe_gossip::{Error, Gossiper, Id, Statistics};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -88,7 +117,6 @@ impl MessageStream {
             self.write_buffer.put(&serialised_length);
             self.write_buffer.put(message);
         }
-
     }
 
     /// Flush the write buffer to the TCP stream.
@@ -150,8 +178,6 @@ impl Stream for MessageStream {
     }
 }
 
-
-
 /// This is effectively a container for all the state required to manage a node while the network
 /// is running.  `Node` implements `Future` and hence each node is run continuously on a single
 /// thread from the threadpool.  When the future returns, the `Node` has completed processing all
@@ -188,11 +214,10 @@ impl Node {
     }
 
     fn add_peer(&mut self, id: Id, tcp_stream: TcpStream) {
-        assert!(
-            self.peers
-                .insert(id, MessageStream::new(tcp_stream))
-                .is_none()
-        );
+        assert!(self
+            .peers
+            .insert(id, MessageStream::new(tcp_stream))
+            .is_none());
         unwrap!(self.gossiper.add_peer(id));
     }
 
@@ -291,12 +316,11 @@ impl Future for Node {
         self.tick();
         self.send_to_peers();
         let stats = self.gossiper.statistics();
-        let messages = self.gossiper
+        let messages = self
+            .gossiper
             .messages()
             .into_iter()
-            .map(|serialised| {
-                unwrap!(serialisation::deserialise::<String>(&serialised))
-            })
+            .map(|serialised| unwrap!(serialisation::deserialise::<String>(&serialised)))
             .collect_vec();
         let id = self.id();
         unwrap!(self.stats_sender.unbounded_send((id, messages, stats)));
@@ -314,8 +338,6 @@ impl Debug for Node {
         write!(formatter, "{:?} - {:?}", thread::current().id(), self.id())
     }
 }
-
-
 
 struct Network {
     pool: CpuPool,
@@ -349,7 +371,10 @@ impl Network {
             stats: HashMap::new(),
             node_futures: vec![],
             client_messages: vec![],
-            termination_message: rand::thread_rng().sample_iter(&Alphanumeric).take(20).collect(),
+            termination_message: rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(20)
+                .collect(),
         };
 
         let mut nodes = vec![];
@@ -375,8 +400,8 @@ impl Network {
             let incoming = Rc::new(RefCell::new(listener.incoming().wait()));
             for j in (i + 1)..node_count {
                 let rhs_id = nodes[j].id();
-                let rhs_stream = current_thread::run(|_| TcpStream::connect(&listener_address))
-                    .wait();
+                let rhs_stream =
+                    current_thread::run(|_| TcpStream::connect(&listener_address)).wait();
                 nodes[j].add_peer(lhs_id, unwrap!(rhs_stream));
                 let incoming = incoming.clone();
                 let lhs_stream = unwrap!(current_thread::run(|_| incoming.borrow_mut()).next());
@@ -400,9 +425,7 @@ impl Network {
             _ => rand::thread_rng().gen_range(0, self.message_senders.len()),
         };
         self.client_messages.push((message.to_string(), count));
-        unwrap!(self.message_senders[count].unbounded_send(
-            message.to_string(),
-        ));
+        unwrap!(self.message_senders[count].unbounded_send(message.to_string(),));
         Ok(())
     }
 }
@@ -417,9 +440,7 @@ impl Future for Network {
         {
             println!(
                 "Received from {:?} -- {:?} -- {:?}",
-                node_id,
-                messages,
-                stats
+                node_id, messages, stats
             );
             let _ = self.received_messages.insert(node_id, messages);
             let _ = self.stats.insert(node_id, stats);
@@ -427,8 +448,8 @@ impl Future for Network {
 
         let client_messages_len = self.client_messages.len();
         let enough_messages = |messages: &Vec<String>| messages.len() >= client_messages_len;
-        if !self.received_messages.is_empty() &&
-            self.received_messages.values().all(enough_messages)
+        if !self.received_messages.is_empty()
+            && self.received_messages.values().all(enough_messages)
         {
             return Ok(Async::Ready(()));
         }
@@ -444,9 +465,7 @@ impl Future for Network {
 impl Drop for Network {
     fn drop(&mut self) {
         for message_sender in &mut self.message_senders {
-            unwrap!(message_sender.unbounded_send(
-                self.termination_message.clone(),
-            ));
+            unwrap!(message_sender.unbounded_send(self.termination_message.clone(),));
         }
         let node_futures = mem::replace(&mut self.node_futures, vec![]);
         for node_future in node_futures {
@@ -454,8 +473,6 @@ impl Drop for Network {
         }
     }
 }
-
-
 
 fn main() {
     let mut network = Network::new(8);

@@ -10,10 +10,10 @@
 use crate::id::Id;
 use crate::message_state::MessageState;
 use crate::messages::GossipRpc;
-use std::{cmp, mem, u64};
-use std::collections::{BTreeMap, BTreeSet};
 use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
+use std::{cmp, mem, u64};
 
 /// Gossip protocol handler.
 pub struct Gossip {
@@ -116,15 +116,14 @@ impl Gossip {
         // Collect any responses required.
         let is_new_this_round = self.peers_in_this_round.insert(peer_id);
         let responses = if is_new_this_round && is_push {
-            let mut responses: Vec<GossipRpc> = self.messages
+            let mut responses: Vec<GossipRpc> = self
+                .messages
                 .iter()
                 .filter_map(|(message, state)| {
                     // Filter out any for which `our_counter()` is `None`.
-                    state.our_counter().map(|counter| {
-                        GossipRpc::Pull {
-                            msg: message.clone(),
-                            counter,
-                        }
+                    state.our_counter().map(|counter| GossipRpc::Pull {
+                        msg: message.clone(),
+                        counter,
                     })
                 })
                 .collect();
@@ -178,11 +177,7 @@ impl Debug for Gossip {
             write!(
                 formatter,
                 "{:02x}{:02x}{:02x}{:02x}: {:?}, ",
-                message[0],
-                message[1],
-                message[2],
-                message[3],
-                state
+                message[0], message[1], message[2], message[3], state
             )?;
         }
         write!(formatter, "}}, network_size: {}, ", self.network_size)?;
@@ -196,7 +191,6 @@ impl Debug for Gossip {
         )
     }
 }
-
 
 /// Statistics on each gossiper.
 #[derive(Clone, Copy, Default)]
