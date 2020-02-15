@@ -28,7 +28,6 @@
     missing_docs,
     non_shorthand_field_patterns,
     overflowing_literals,
-    plugin_as_library,
     stable_features,
     unconditional_recursion,
     unknown_lints,
@@ -74,8 +73,8 @@ mod error;
 mod gossip;
 mod gossiper;
 mod id;
-mod message_state;
 mod messages;
+mod message_state;
 
 pub use crate::error::Error;
 pub use crate::gossip::Statistics;
