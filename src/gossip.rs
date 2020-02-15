@@ -9,7 +9,7 @@
 
 use crate::id::Id;
 use crate::message_state::MessageState;
-use crate::messages::GossipRpc;
+use crate::messages::GossipType;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
@@ -68,7 +68,7 @@ impl Gossip {
 
     /// Trigger the end of this round.  Returns a list of Push RPCs to be sent to a single random
     /// peer during this new round.
-    pub fn next_round(&mut self) -> Vec<GossipRpc> {
+    pub fn next_round(&mut self) -> Vec<GossipType> {
         self.statistics.rounds += 1;
         let mut push_list = vec![];
         let messages = mem::replace(&mut self.messages, BTreeMap::new());
@@ -83,7 +83,7 @@ impl Gossip {
                 );
                 // Filter out any for which `our_counter()` is `None`.
                 if let Some(counter) = new_state.our_counter() {
-                    push_list.push(GossipRpc::Push {
+                    push_list.push(GossipType::Push {
                         msg: message.clone(),
                         counter,
                     });
@@ -96,7 +96,7 @@ impl Gossip {
         // Sends an empty Push in case of nothing to push. It acts as a fetch request to peer.
         if push_list.is_empty() {
             self.statistics.empty_push_sent += 1;
-            push_list.push(GossipRpc::Push {
+            push_list.push(GossipType::Push {
                 msg: Vec::new(),
                 counter: 0,
             });
@@ -107,21 +107,21 @@ impl Gossip {
     /// We've received `rpc` from `peer_id`.  If this is a Push RPC and we've not already heard from
     /// `peer_id` in this round, this returns the list of Pull RPCs which should be sent back to
     /// `peer_id`.
-    pub fn receive(&mut self, peer_id: Id, rpc: GossipRpc) -> Vec<GossipRpc> {
+    pub fn receive(&mut self, peer_id: Id, rpc: GossipType) -> Vec<GossipType> {
         let (is_push, message, counter) = match rpc {
-            GossipRpc::Push { msg, counter } => (true, msg, counter),
-            GossipRpc::Pull { msg, counter } => (false, msg, counter),
+            GossipType::Push { msg, counter } => (true, msg, counter),
+            GossipType::Pull { msg, counter } => (false, msg, counter),
         };
 
         // Collect any responses required.
         let is_new_this_round = self.peers_in_this_round.insert(peer_id);
         let responses = if is_new_this_round && is_push {
-            let mut responses: Vec<GossipRpc> = self
+            let mut responses: Vec<GossipType> = self
                 .messages
                 .iter()
                 .filter_map(|(message, state)| {
                     // Filter out any for which `our_counter()` is `None`.
-                    state.our_counter().map(|counter| GossipRpc::Pull {
+                    state.our_counter().map(|counter| GossipType::Pull {
                         msg: message.clone(),
                         counter,
                     })
@@ -131,7 +131,7 @@ impl Gossip {
             // Empty Pull notifies the peer that all messages in this node was in State A.
             if responses.is_empty() {
                 self.statistics.empty_pull_sent += 1;
-                responses.push(GossipRpc::Pull {
+                responses.push(GossipType::Pull {
                     msg: Vec::new(),
                     counter: 0,
                 });

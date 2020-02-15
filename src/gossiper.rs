@@ -8,7 +8,7 @@
 // Software.
 
 use super::gossip::{Gossip, Statistics};
-use super::messages::{GossipRpc, Message};
+use super::messages::{GossipType, Message};
 use crate::error::Error;
 use crate::id::Id;
 use bincode::serialize;
@@ -107,7 +107,7 @@ impl Gossiper {
         self.gossip.clear();
     }
 
-    fn prepare_to_send(&mut self, rpcs: Vec<GossipRpc>) -> Vec<Vec<u8>> {
+    fn prepare_to_send(&mut self, rpcs: Vec<GossipType>) -> Vec<Vec<u8>> {
         let mut messages = vec![];
         for rpc in rpcs {
             if let Ok(serialised_msg) = Message::serialise(&rpc, &self.keys) {
@@ -166,7 +166,7 @@ mod tests {
     fn send_messages(gossipers: &mut Vec<Gossiper>, num_of_msgs: u32) -> (u64, u64, Statistics) {
         let mut rng = rand::thread_rng();
         let empty_rpc_len = unwrap!(Message::serialise(
-            &GossipRpc::Push {
+            &GossipType::Push {
                 msg: vec![],
                 counter: 0,
             },
