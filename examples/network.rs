@@ -29,7 +29,6 @@
     missing_docs,
     non_shorthand_field_patterns,
     overflowing_literals,
-    plugin_as_library,
     stable_features,
     unconditional_recursion,
     unknown_lints,
@@ -65,12 +64,12 @@ use rand;
 extern crate tokio_io;
 #[macro_use]
 extern crate unwrap;
+use bincode::{deserialize, serialize};
 use bytes::{BufMut, BytesMut};
 use futures::sync::mpsc;
 use futures::{Async, Future, Poll, Stream};
 use futures_cpupool::{CpuFuture, CpuPool};
 use itertools::Itertools;
-use maidsafe_utilities::serialisation;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use safe_gossip::{Error, Gossiper, Id, Statistics};
@@ -109,7 +108,7 @@ impl MessageStream {
     /// that the correct size can be read by the receiver before it tries to retrieve the actual
     /// message.
     fn buffer(&mut self, message: &[u8]) {
-        let serialised_length = unwrap!(serialisation::serialise(&(message.len() as u32)));
+        let serialised_length = unwrap!(serialize(&(message.len() as u32)));
         if self.write_buffer.remaining_mut() < serialised_length.len() + message.len() {
             self.write_buffer.extend_from_slice(&serialised_length);
             self.write_buffer.extend_from_slice(message);
@@ -158,7 +157,7 @@ impl Stream for MessageStream {
         // message's length.
         if self.incoming_message_length.is_none() && self.read_buffer.len() >= 4 {
             let length_buffer = self.read_buffer.split_to(4);
-            let length = unwrap!(serialisation::deserialise::<u32>(&length_buffer)) as usize;
+            let length = unwrap!(deserialize::<u32>(&length_buffer)) as usize;
             self.incoming_message_length = Some(length);
         }
 
@@ -320,7 +319,7 @@ impl Future for Node {
             .gossiper
             .messages()
             .into_iter()
-            .map(|serialised| unwrap!(serialisation::deserialise::<String>(&serialised)))
+            .map(|serialised| unwrap!(deserialize::<String>(&serialised)))
             .collect_vec();
         let id = self.id();
         unwrap!(self.stats_sender.unbounded_send((id, messages, stats)));
