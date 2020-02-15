@@ -48,23 +48,12 @@
     unused_qualifications,
     unused_results
 )]
-#![allow(
-    box_pointers,
-    missing_copy_implementations,
-    missing_debug_implementations,
-    unused_extern_crates,
-    variant_size_differences,
-    non_camel_case_types
-)]
+#![allow(missing_copy_implementations, missing_debug_implementations)]
 
-#[cfg(test)]
-extern crate itertools;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
-extern crate quick_error;
 #[cfg(test)]
 #[macro_use]
 extern crate unwrap;
@@ -73,8 +62,8 @@ mod error;
 mod gossip;
 mod gossiper;
 mod id;
-mod messages;
 mod message_state;
+mod messages;
 
 pub use crate::error::Error;
 pub use crate::gossip::Statistics;

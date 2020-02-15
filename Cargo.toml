@@ -21,6 +21,7 @@ serde_derive = "1.0.104"
 sha3 = "0.8.2"
 unwrap = "1.2.1"
 bincode = "1.2.1"
+err-derive = "0.2.2"
 
 [dev-dependencies]
 futures-cpupool = "0.1.8"

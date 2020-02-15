@@ -8,37 +8,20 @@
 // Software.
 
 use bincode;
+use err_derive::Error;
 
-quick_error! {
-    /// Gossiper error variants.
-    #[derive(Debug)]
-    pub enum Error {
-        /// No connected peers.
-        NoPeers {
-            description("No connected peers")
-            display("There are no connected peers with which to gossip.")
-        }
-        /// Already started gossiping.
-        AlreadyStarted {
-            description("Already started gossiping")
-            display("Connections to all other nodes must be made before sending any messages.")
-        }
-        /// Failed in verify signature.
-        SigFailure {
-            description("Signature cannot be verified")
-            display("The message or signature might be corrupted, or the signer is wrong.")
-        }
-        /// IO error.
-        Io(error: ::std::io::Error) {
-            description(error.description())
-            display("I/O error: {}", error)
-            from()
-        }
-        /// Serialisation Error.
-        Serialisation(error: Box<bincode::ErrorKind>) {
-            description(error.description())
-            display("Serialisation error: {}", error)
-            from()
-        }
-    }
+/// Gossiper error variants.
+#[derive(Debug, Error)]
+#[allow(missing_docs)]
+pub enum Error {
+    #[error(display = "Gossip group empty")]
+    NoPeers,
+    #[error(display = "Already started gossiping.")]
+    AlreadyStarted,
+    #[error(display = "Failed to verify signature.")]
+    SigFailure,
+    #[error(display = "IO error")]
+    Io(#[error(cause)] ::std::io::Error),
+    #[error(display = "Serialisation Error.")]
+    Serialisation(#[error(cause)] Box<bincode::ErrorKind>),
 }
