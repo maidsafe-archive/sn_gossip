@@ -52,7 +52,9 @@ In relation to intellectual property rights in your contributions:
       render an accounting to the other for any use or distribution of your contribution.
 
 This MCA is effective on the date you first submitted a contribution to us.  Any contribution we
-make available under any license will also be made available under GPL v3.
+make available under any license will also be made available under the MIT license <LICENSE-MIT
+// http://opensource.org/licenses/MIT> or the Modified BSD license <LICENSE-BSD
+// https://opensource.org/licenses/BSD-3-Clause>, at your option.
 
 You covenant, represent, warrant and agree that:
 
@@ -78,4 +80,3 @@ contributions.
 This MCA is governed by Scottish law and subject to the jurisdiction of the Scottish courts save
 that we or you may bring action in other courts to the extent necessary to protect or enforce our
 intellectual property rights.
-
