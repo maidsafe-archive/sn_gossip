@@ -60,12 +60,12 @@ extern crate unwrap;
 
 mod error;
 mod gossip;
-mod gossiper;
 mod id;
-mod message_state;
 mod messages;
+mod node;
+mod rumor_state;
 
 pub use crate::error::Error;
 pub use crate::gossip::Statistics;
-pub use crate::gossiper::Gossiper;
 pub use crate::id::Id;
+pub use crate::node::Node;

@@ -13,14 +13,14 @@ use ed25519_dalek::{Keypair, PublicKey, Signature};
 #[cfg(not(test))]
 use sha3::Sha3_512;
 
-/// Messages sent via a direct connection, wrapper of gossip protocol rpcs.
+/// Messages sent via a direct connection, wrapper of gossip protocol requests.
 #[derive(Serialize, Debug, Deserialize)]
 pub struct Message(pub Vec<u8>, pub Signature);
 
 #[cfg(not(test))]
 impl Message {
-    pub fn serialise(rpc: &GossipType, keys: &Keypair) -> Result<Vec<u8>, Error> {
-        let serialised_msg = serialize(rpc)?;
+    pub fn serialise(request: &GossipType, keys: &Keypair) -> Result<Vec<u8>, Error> {
+        let serialised_msg = serialize(request)?;
         let sig: Signature = keys.sign::<Sha3_512>(&serialised_msg);
         Ok(serialize(&Message(serialised_msg, sig))?)
     }
@@ -37,8 +37,8 @@ impl Message {
 
 #[cfg(test)]
 impl Message {
-    pub fn serialise(rpc: &GossipType, _keys: &Keypair) -> Result<Vec<u8>, Error> {
-        Ok(serialize(rpc)?)
+    pub fn serialise(request: &GossipType, _keys: &Keypair) -> Result<Vec<u8>, Error> {
+        Ok(serialize(request)?)
     }
 
     pub fn deserialise(serialised_msg: &[u8], _key: &PublicKey) -> Result<GossipType, Error> {
@@ -46,11 +46,11 @@ impl Message {
     }
 }
 
-/// Gossip rpcs
+/// Gossip requests
 #[derive(Debug, Serialize, Deserialize)]
 pub enum GossipType {
-    /// Sent from Node A to Node B to push a message and its counter.
-    Push { msg: Vec<u8>, counter: u8 },
-    /// Sent from Node B to Node A as a reaction to receiving a push message from A.
-    Pull { msg: Vec<u8>, counter: u8 },
+    /// Sent from Node A to Node B to push a rumor and its age.
+    Push { msg: Vec<u8>, age: u8 },
+    /// Sent from Node B to Node A as a reaction to receiving a push rumor from A.
+    Pull { msg: Vec<u8>, age: u8 },
 }
