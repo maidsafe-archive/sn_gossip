@@ -93,14 +93,6 @@ impl Gossip {
             .collect();
         self.peers_in_this_round.clear();
         self.statistics.full_message_sent += push_list.len() as u64;
-        // Sends an empty Push in case of nothing to push. It acts as a fetch request to peer.
-        if push_list.is_empty() {
-            self.statistics.empty_push_sent += 1;
-            push_list.push(GossipType::Push {
-                msg: Vec::new(),
-                counter: 0,
-            });
-        }
         push_list
     }
 
@@ -116,7 +108,7 @@ impl Gossip {
         // Collect any responses required.
         let is_new_this_round = self.peers_in_this_round.insert(peer_id);
         let responses = if is_new_this_round && is_push {
-            let mut responses: Vec<GossipType> = self
+            let responses: Vec<GossipType> = self
                 .messages
                 .iter()
                 .filter_map(|(message, state)| {
@@ -128,14 +120,6 @@ impl Gossip {
                 })
                 .collect();
             self.statistics.full_message_sent += responses.len() as u64;
-            // Empty Pull notifies the peer that all messages in this node was in State A.
-            if responses.is_empty() {
-                self.statistics.empty_pull_sent += 1;
-                responses.push(GossipType::Pull {
-                    msg: Vec::new(),
-                    counter: 0,
-                });
-            }
             responses
         } else {
             vec![]
@@ -197,10 +181,6 @@ impl Debug for Gossip {
 pub struct Statistics {
     /// Total rounds experienced (each push_tick is considered as one round).
     pub rounds: u64,
-    /// Total empty pull sent from this gossiper.
-    pub empty_pull_sent: u64,
-    /// Total empty push sent from this gossiper.
-    pub empty_push_sent: u64,
     /// Total full message sent from this gossiper.
     pub full_message_sent: u64,
     /// Total full message this gossiper received.
@@ -212,8 +192,6 @@ impl Statistics {
     pub fn new_max() -> Self {
         Statistics {
             rounds: u64::MAX,
-            empty_pull_sent: u64::MAX,
-            empty_push_sent: u64::MAX,
             full_message_sent: u64::MAX,
             full_message_received: u64::MAX,
         }
@@ -222,8 +200,6 @@ impl Statistics {
     /// Add the value of other into self
     pub fn add(&mut self, other: &Statistics) {
         self.rounds += other.rounds;
-        self.empty_pull_sent += other.empty_pull_sent;
-        self.empty_push_sent += other.empty_push_sent;
         self.full_message_sent += other.full_message_sent;
         self.full_message_received += other.full_message_received;
     }
@@ -231,8 +207,6 @@ impl Statistics {
     /// Update self with the min of self and other
     pub fn min(&mut self, other: &Statistics) {
         self.rounds = cmp::min(self.rounds, other.rounds);
-        self.empty_pull_sent = cmp::min(self.empty_pull_sent, other.empty_pull_sent);
-        self.empty_push_sent = cmp::min(self.empty_push_sent, other.empty_push_sent);
         self.full_message_sent = cmp::min(self.full_message_sent, other.full_message_sent);
         self.full_message_received =
             cmp::min(self.full_message_received, other.full_message_received);
@@ -241,8 +215,6 @@ impl Statistics {
     /// Update self with the max of self and other
     pub fn max(&mut self, other: &Statistics) {
         self.rounds = cmp::max(self.rounds, other.rounds);
-        self.empty_pull_sent = cmp::max(self.empty_pull_sent, other.empty_pull_sent);
-        self.empty_push_sent = cmp::max(self.empty_push_sent, other.empty_push_sent);
         self.full_message_sent = cmp::max(self.full_message_sent, other.full_message_sent);
         self.full_message_received =
             cmp::max(self.full_message_received, other.full_message_received);
@@ -253,13 +225,9 @@ impl Debug for Statistics {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "rounds: {},  empty pull sent: {},  empty push sent: {}, full messages sent: {},  \n
+            "rounds: {}, full messages sent: {},  \n
              full messages received: {}",
-            self.rounds,
-            self.empty_pull_sent,
-            self.empty_push_sent,
-            self.full_message_sent,
-            self.full_message_received
+            self.rounds, self.full_message_sent, self.full_message_received
         )
     }
 }
