@@ -145,6 +145,7 @@ mod tests {
     use rand::seq::SliceRandom;
     use rand::{self, Rng};
     use std::collections::BTreeMap;
+    use std::time::Instant;
     use std::{cmp, u64};
 
     fn create_network(node_count: u32) -> Vec<Node> {
@@ -351,5 +352,107 @@ mod tests {
                 print_metric(metric.0 as f64, metric.1 as f64, &metric.2, *number, *msgs);
             }
         }
+    }
+
+    #[test]
+    fn avg_rounds_and_missed() {
+        let num_nodes = 20;
+        let num_msgs = 1;
+        let iters = 100;
+        let mut all_rounds = vec![];
+        let mut all_missed = vec![];
+        let mut total_rounds = 0;
+        let mut total_missed = 0;
+        let t = Instant::now();
+        for _ in 0..iters {
+            let (rounds, nodes_missed) = prove_of_stop(num_nodes, num_msgs);
+            all_rounds.push(rounds);
+            all_missed.push(nodes_missed);
+            total_rounds += rounds;
+            total_missed += nodes_missed;
+        }
+        println!("Elapsed time: {:?}", t.elapsed());
+        all_rounds.sort();
+        all_missed.sort();
+        let avg_rounds = total_rounds / iters;
+        let avg_missed = total_missed / iters;
+        let median_rounds = all_rounds[iters / 2];
+        let median_missed = all_missed[iters / 2];
+
+        println!("Iters: {:?}", iters);
+        println!("Avg rounds: {:?}", avg_rounds);
+        println!("Median rounds: {:?}", median_rounds);
+        println!(
+            "Avg missed percent: {1:.*} %",
+            2,
+            100 as f32 * (avg_missed as f32 / num_nodes as f32)
+        );
+        println!(
+            "Median missed percent: {1:.*} %",
+            2,
+            100 as f32 * (median_missed as f32 / num_nodes as f32)
+        );
+    }
+
+    fn prove_of_stop(num_nodes: u32, num_msgs: u32) -> (usize, usize) {
+        let mut gossipers = create_network(num_nodes);
+        let mut rng = rand::thread_rng();
+        let mut rumors: Vec<String> = Vec::new();
+        for _ in 0..num_msgs {
+            let mut raw = [0u8; 20];
+            rng.fill(&mut raw[..]);
+            rumors.push(String::from_utf8_lossy(&raw).to_string());
+        }
+
+        let mut rounds = 0;
+        // Polling
+        let mut processed = true;
+        while processed {
+            rounds += 1;
+            processed = false;
+            let mut messages = BTreeMap::new();
+            // Call `next_round()` on each node to gather a list of all Push requests.
+            for gossiper in gossipers.iter_mut() {
+                if !rumors.is_empty() && rng.gen() {
+                    let rumor = unwrap!(rumors.pop());
+                    let _ = gossiper.initiate_rumor(&rumor);
+                }
+                let (dst_id, push_msgs) = unwrap!(gossiper.next_round());
+                if !push_msgs.is_empty() {
+                    processed = true;
+                }
+                let _ = messages.insert((gossiper.id(), dst_id), push_msgs);
+            }
+
+            // Send all Push requests and the corresponding Pull requests.
+            for ((src_id, dst_id), push_msgs) in messages {
+                let mut pull_msgs = vec![];
+                {
+                    let dst = unwrap!(gossipers.iter_mut().find(|node| node.id() == dst_id));
+                    // Only the first Push from this peer should return any Pulls.
+                    for (index, push_msg) in push_msgs.into_iter().enumerate() {
+                        if index == 0 {
+                            pull_msgs = dst.receive_rumor(&src_id, &push_msg);
+                        } else {
+                            assert!(dst.receive_rumor(&src_id, &push_msg).is_empty());
+                        }
+                    }
+                }
+                let src = unwrap!(gossipers.iter_mut().find(|node| node.id() == src_id));
+                for pull_msg in pull_msgs {
+                    assert!(src.receive_rumor(&dst_id, &pull_msg).is_empty());
+                }
+            }
+        }
+
+        let mut nodes_missed = 0;
+        // Checking if nodes missed the rumor.
+        for gossiper in gossipers.iter() {
+            if gossiper.rumors().len() as u32 != num_msgs {
+                nodes_missed += 1;
+            }
+        }
+
+        (rounds, nodes_missed)
     }
 }
