@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-//! Run a local network of gossiper nodes.
+//! Run a local network of gossiping nodes.
 
 #![forbid(
     exceeding_bitshifts,
@@ -64,7 +64,7 @@ use futures_cpupool::{CpuFuture, CpuPool};
 use itertools::Itertools;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use safe_gossip::{Error, Gossiper, Id, Statistics};
+use safe_gossip::{Error, Id, Node, Statistics};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
@@ -172,12 +172,12 @@ impl Stream for MessageStream {
 /// This is effectively a container for all the state required to manage a node while the network
 /// is running.  `Node` implements `Future` and hence each node is run continuously on a single
 /// thread from the threadpool.  When the future returns, the `Node` has completed processing all
-/// messages.
-struct Node {
-    gossiper: Gossiper,
+/// rumors.
+struct TestNode {
+    node: Node,
     /// This receives new messages from the `Network` object; equivalent to e.g. a new client event.
     channel_receiver: mpsc::UnboundedReceiver<String>,
-    /// This can be used to send the received client messages and `Gossiper`'s stats to the
+    /// This can be used to send the received client messages and `Node`'s stats to the
     /// `Network` object.
     stats_sender: mpsc::UnboundedSender<(Id, Vec<String>, Statistics)>,
     /// Map of peer ID to the wrapped TCP stream connecting us to them.
@@ -188,14 +188,14 @@ struct Node {
     termination_message: String,
 }
 
-impl Node {
+impl TestNode {
     fn new(
         channel_receiver: mpsc::UnboundedReceiver<String>,
         stats_sender: mpsc::UnboundedSender<(Id, Vec<String>, Statistics)>,
         termination_message: String,
     ) -> Self {
-        Node {
-            gossiper: Gossiper::default(),
+        TestNode {
+            node: Node::default(),
             channel_receiver,
             stats_sender,
             peers: HashMap::new(),
@@ -209,11 +209,11 @@ impl Node {
             .peers
             .insert(id, MessageStream::new(tcp_stream))
             .is_none());
-        unwrap!(self.gossiper.add_peer(id));
+        unwrap!(self.node.add_peer(id));
     }
 
     fn id(&self) -> Id {
-        self.gossiper.id()
+        self.node.id()
     }
 
     /// Receive all new messages from the `Network` object.  If we receive the termination message,
@@ -223,7 +223,7 @@ impl Node {
             if message == self.termination_message {
                 return false;
             }
-            unwrap!(self.gossiper.send_new(&message));
+            unwrap!(self.node.initiate_rumor(&message));
         }
         true
     }
@@ -233,7 +233,7 @@ impl Node {
         if !self.is_in_round {
             self.is_in_round = true;
 
-            let (peer_id, msgs_to_send) = unwrap!(self.gossiper.next_round());
+            let (peer_id, msgs_to_send) = unwrap!(self.node.next_round());
             if let Some(message_stream) = self.peers.get_mut(&peer_id) {
                 // Buffer the messages to be sent.
                 for msg in msgs_to_send {
@@ -252,7 +252,7 @@ impl Node {
             loop {
                 match message_stream.poll() {
                     Ok(Async::Ready(Some(message))) => {
-                        let msgs_to_send = self.gossiper.handle_received_message(peer_id, &message);
+                        let msgs_to_send = self.node.receive_rumor(peer_id, &message);
                         // Buffer the messages to be sent back.
                         for msg in msgs_to_send {
                             has_response = true;
@@ -295,7 +295,7 @@ impl Node {
     }
 }
 
-impl Future for Node {
+impl Future for TestNode {
     type Item = ();
     type Error = Error;
 
@@ -306,15 +306,15 @@ impl Future for Node {
         self.receive_from_peers();
         self.tick();
         self.send_to_peers();
-        let stats = self.gossiper.statistics();
-        let messages = self
-            .gossiper
-            .messages()
+        let stats = self.node.statistics();
+        let rumors = self
+            .node
+            .rumors()
             .into_iter()
             .map(|serialised| unwrap!(deserialize::<String>(&serialised)))
             .collect_vec();
         let id = self.id();
-        unwrap!(self.stats_sender.unbounded_send((id, messages, stats)));
+        unwrap!(self.stats_sender.unbounded_send((id, rumors, stats)));
 
         // If we have no peers left, there is nothing more for this node to do.
         if self.peers.is_empty() {
@@ -324,7 +324,7 @@ impl Future for Node {
     }
 }
 
-impl Debug for Node {
+impl Debug for TestNode {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "{:?} - {:?}", thread::current().id(), self.id())
     }
@@ -332,19 +332,19 @@ impl Debug for Node {
 
 struct Network {
     pool: CpuPool,
-    // An mpsc channel sender for each node for giving new client messages to that node.
+    // An mpsc channel sender for each node for giving new client rumors to that node.
     message_senders: Vec<mpsc::UnboundedSender<String>>,
-    // An mpsc channel receiver for getting the client messages and stats from the nodes.
+    // An mpsc channel receiver for getting the client rumors and stats from the nodes.
     stats_receiver: mpsc::UnboundedReceiver<(Id, Vec<String>, Statistics)>,
-    // The last set of client messages received via `stats_receiver` for each node.
-    received_messages: HashMap<Id, Vec<String>>,
+    // The last set of client rumors received via `stats_receiver` for each node.
+    received_rumors: HashMap<Id, Vec<String>>,
     // The last set of stats received via `stats_receiver` for each node.
     stats: HashMap<Id, Statistics>,
     // The futures for all nodes.  When these return ready, that node has finished running.
     node_futures: Vec<CpuFuture<(), Error>>,
-    // All messages sent in the order they were passed in.  Tuple contains the message and the index
+    // All rumors sent in the order they were passed in.  Tuple contains the rumors and the index
     // of the node used to send.
-    client_messages: Vec<(String, usize)>,
+    client_rumors: Vec<(String, usize)>,
     // Message which when sent to a node via its `message_sender` indicates to the node that it
     // should terminate.
     termination_message: String,
@@ -358,10 +358,10 @@ impl Network {
             pool: CpuPool::new_num_cpus(),
             message_senders: vec![],
             stats_receiver,
-            received_messages: HashMap::new(),
+            received_rumors: HashMap::new(),
             stats: HashMap::new(),
             node_futures: vec![],
-            client_messages: vec![],
+            client_rumors: vec![],
             termination_message: rand::thread_rng()
                 .sample_iter(&Alphanumeric)
                 .take(20)
@@ -371,7 +371,7 @@ impl Network {
         let mut nodes = vec![];
         for _ in 0..node_count {
             let (message_sender, message_receiver) = mpsc::unbounded();
-            let node = Node::new(
+            let node = TestNode::new(
                 message_receiver,
                 stats_sender.clone(),
                 network.termination_message.clone(),
@@ -380,7 +380,7 @@ impl Network {
             nodes.push(node);
         }
         nodes.sort_by(|lhs, rhs| lhs.id().cmp(&rhs.id()));
-        println!("Nodes: {:?}", nodes.iter().map(Node::id).collect_vec());
+        println!("Nodes: {:?}", nodes.iter().map(TestNode::id).collect_vec());
 
         // Connect all the nodes.
         let listening_address = unwrap!("127.0.0.1:0".parse());
@@ -408,15 +408,15 @@ impl Network {
         network
     }
 
-    /// Send the given `message`.  If `node_index` is `Some` and is less than the number of `Node`s
+    /// Send the given `rumor`.  If `node_index` is `Some` and is less than the number of `Node`s
     /// in the `Network`, then the `Node` at that index will be chosen as the initial informed one.
-    fn send(&mut self, message: &str, node_index: Option<usize>) -> Result<(), Error> {
+    fn send(&mut self, rumor: &str, node_index: Option<usize>) -> Result<(), Error> {
         let count = match node_index {
             Some(index) if index < self.message_senders.len() => index,
             _ => rand::thread_rng().gen_range(0, self.message_senders.len()),
         };
-        self.client_messages.push((message.to_string(), count));
-        unwrap!(self.message_senders[count].unbounded_send(message.to_string(),));
+        self.client_rumors.push((rumor.to_string(), count));
+        unwrap!(self.message_senders[count].unbounded_send(rumor.to_string(),));
         Ok(())
     }
 }
@@ -426,27 +426,21 @@ impl Future for Network {
     type Error = String;
 
     fn poll(&mut self) -> Poll<(), String> {
-        while let Async::Ready(Some((node_id, messages, stats))) =
-            unwrap!(self.stats_receiver.poll())
+        while let Async::Ready(Some((node_id, rumors, stats))) = unwrap!(self.stats_receiver.poll())
         {
-            println!(
-                "Received from {:?} -- {:?} -- {:?}",
-                node_id, messages, stats
-            );
-            let _ = self.received_messages.insert(node_id, messages);
+            println!("Received from {:?} -- {:?} -- {:?}", node_id, rumors, stats);
+            let _ = self.received_rumors.insert(node_id, rumors);
             let _ = self.stats.insert(node_id, stats);
         }
 
-        let client_messages_len = self.client_messages.len();
-        let enough_messages = |messages: &Vec<String>| messages.len() >= client_messages_len;
-        if !self.received_messages.is_empty()
-            && self.received_messages.values().all(enough_messages)
-        {
+        let client_rumors_len = self.client_rumors.len();
+        let enough_rumors = |rumors: &Vec<String>| rumors.len() >= client_rumors_len;
+        if !self.received_rumors.is_empty() && self.received_rumors.values().all(enough_rumors) {
             return Ok(Async::Ready(()));
         }
 
         if !self.stats.is_empty() && self.stats.values().all(|stats| stats.rounds > 200) {
-            return Err("Not all nodes got all messages.".to_string());
+            return Err("Not all nodes got all rumors.".to_string());
         }
 
         Ok(Async::NotReady)

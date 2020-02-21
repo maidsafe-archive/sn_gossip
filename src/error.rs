@@ -10,7 +10,7 @@
 use bincode;
 use err_derive::Error;
 
-/// Gossiper error variants.
+/// Node error variants.
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
 pub enum Error {
