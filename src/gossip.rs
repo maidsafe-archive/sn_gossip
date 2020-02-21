@@ -10,6 +10,7 @@
 use crate::id::Id;
 use crate::messages::GossipType;
 use crate::rumor_state::RumorState;
+use crate::rumor_state::{Age, Round};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
@@ -21,14 +22,14 @@ pub struct Gossip {
     network_size: f64,
     // When in state B, if our age for a Rumor is incremented to this value, the state
     // transitions to C.  Specified in the paper as `O(ln ln n)`.
-    max_b_age: u8,
+    max_b_age: Age,
     // The maximum number of rounds to remain in state C for a given rumor.  Specified in the
     // paper as `O(ln ln n)`.
-    max_c_rounds: u8,
+    max_c_rounds: Round,
     // The maximum total number of rounds for a rumor to remain in states B or C.  This is a
     // failsafe to allow the definite termination of a rumor being propagated.  Specified in the
     // paper as `O(ln n)`.
-    max_rounds: u8,
+    max_rounds: Round,
     // All peers with which we communicated during this round.
     peers_in_this_round: BTreeSet<Id>,
     // Statistics
@@ -40,9 +41,9 @@ impl Gossip {
         Gossip {
             rumors: BTreeMap::new(),
             network_size: 1.0,
-            max_b_age: 0,
-            max_c_rounds: 0,
-            max_rounds: 0,
+            max_b_age: Age::from(0),
+            max_c_rounds: Round::from(0),
+            max_rounds: Round::from(0),
             peers_in_this_round: BTreeSet::new(),
             statistics: Statistics::default(),
         }
@@ -50,9 +51,9 @@ impl Gossip {
 
     pub fn add_peer(&mut self) {
         self.network_size += 1.0;
-        self.max_b_age = cmp::max(1, self.network_size.ln().ln().ceil() as u8);
-        self.max_c_rounds = cmp::max(1, self.network_size.ln().ln().ceil() as u8);
-        self.max_rounds = cmp::max(1, self.network_size.ln().ceil() as u8);
+        self.max_b_age = Age::from(cmp::max(1, self.network_size.ln().ln().ceil() as u8));
+        self.max_c_rounds = Round::from(cmp::max(1, self.network_size.ln().ln().ceil() as u8));
+        self.max_rounds = Round::from(cmp::max(1, self.network_size.ln().ceil() as u8));
     }
 
     pub fn rumors(&self) -> Vec<Vec<u8>> {
@@ -81,8 +82,8 @@ impl Gossip {
                     self.max_rounds,
                     &self.peers_in_this_round,
                 );
-                // Filter out any for which `our_age()` is `None`.
-                if let Some(age) = new_state.our_age() {
+                // Filter out any for which `rumor_age()` is `None`.
+                if let Some(age) = new_state.rumor_age() {
                     push_list.push(GossipType::Push {
                         msg: rumor.clone(),
                         age,
@@ -112,8 +113,8 @@ impl Gossip {
                 .rumors
                 .iter()
                 .filter_map(|(rumor, state)| {
-                    // Filter out any for which `our_age()` is `None`.
-                    state.our_age().map(|age| GossipType::Pull {
+                    // Filter out any for which `rumor_age()` is `None`.
+                    state.rumor_age().map(|age| GossipType::Pull {
                         msg: rumor.clone(),
                         age,
                     })
@@ -126,7 +127,7 @@ impl Gossip {
         };
 
         // Empty Push & Pull shall not be inserted into cache.
-        if !(rumor.is_empty() && age == 0) {
+        if !(rumor.is_empty() && age == Age::from(0)) {
             self.statistics.received_rumors += 1;
             // Add or update the entry for this rumor.
             match self.rumors.entry(rumor) {
@@ -165,9 +166,9 @@ impl Debug for Gossip {
             )?;
         }
         write!(formatter, "}}, network_size: {}, ", self.network_size)?;
-        write!(formatter, "max_b_age: {}, ", self.max_b_age)?;
-        write!(formatter, "max_c_rounds: {}, ", self.max_c_rounds)?;
-        write!(formatter, "max_rounds: {}, ", self.max_rounds)?;
+        write!(formatter, "max_b_age: {}, ", self.max_b_age.value)?;
+        write!(formatter, "max_c_rounds: {}, ", self.max_c_rounds.value)?;
+        write!(formatter, "max_rounds: {}, ", self.max_rounds.value)?;
         write!(
             formatter,
             "peers_in_this_round: {:?} }}",

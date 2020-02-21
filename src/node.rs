@@ -141,6 +141,7 @@ impl Debug for Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rumor_state::Age;
     use itertools::Itertools;
     use rand::seq::SliceRandom;
     use rand::{self, Rng};
@@ -169,7 +170,7 @@ mod tests {
         let empty_request_len = unwrap!(Message::serialise(
             &GossipType::Push {
                 msg: vec![],
-                age: 0,
+                age: Age::from(0),
             },
             &nodes[0].keys,
         ))
@@ -252,7 +253,7 @@ mod tests {
     fn one_rumor_test(num_of_nodes: u32) {
         let mut nodes = create_network(num_of_nodes);
         println!("Network of {} nodes:", num_of_nodes);
-        let iterations = 1000;
+        let iterations = 100;
         let mut metrics = Vec::new();
         for _ in 0..iterations {
             metrics.push(send_rumors(&mut nodes, 1));
@@ -319,7 +320,7 @@ mod tests {
         num_of_msgs: u32,
     ) {
         println!(
-            "rounds: {}, full_msgs_sent: {}, msgs_missed: {} \
+            "rounds: {}, msgs_sent: {}, msgs_missed: {} \
              ({:.2}%), nodes_missed: {} ({:.2}%)",
             stats.rounds,
             stats.sent_rumors,
@@ -385,12 +386,12 @@ mod tests {
         println!(
             "Avg missed percent: {1:.*} %",
             2,
-            100 as f32 * (avg_missed as f32 / num_nodes as f32)
+            100_f32 * (avg_missed as f32 / num_nodes as f32)
         );
         println!(
             "Median missed percent: {1:.*} %",
             2,
-            100 as f32 * (median_missed as f32 / num_nodes as f32)
+            100_f32 * (median_missed as f32 / num_nodes as f32)
         );
     }
 

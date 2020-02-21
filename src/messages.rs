@@ -8,6 +8,7 @@
 // Software.
 
 use crate::error::Error;
+use crate::rumor_state::Age;
 use bincode::{deserialize, serialize};
 use ed25519_dalek::{Keypair, PublicKey, Signature};
 #[cfg(not(test))]
@@ -50,7 +51,7 @@ impl Message {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum GossipType {
     /// Sent from Node A to Node B to push a rumor and its age.
-    Push { msg: Vec<u8>, age: u8 },
+    Push { msg: Vec<u8>, age: Age },
     /// Sent from Node B to Node A as a reaction to receiving a push rumor from A.
-    Pull { msg: Vec<u8>, age: u8 },
+    Pull { msg: Vec<u8>, age: Age },
 }

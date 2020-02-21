@@ -19,19 +19,19 @@ pub enum RumorState {
         /// The round number for this rumor.  This is not a globally-synchronised variable, rather
         /// it is set to 0 when we first receive a copy of this rumor and is incremented every
         /// time `next_round()` is called.
-        round: u8,
+        round: Round,
         /// Our age for this rumor.  This may increase by 1 during a single round or may
         /// remain the same depending on the ages attached to incoming copies of this rumor.
-        our_age: u8,
+        rumor_age: Age,
         /// The map of <peer, age>s which have sent us this rumor during this round.
-        peer_ages: BTreeMap<Id, u8>,
+        peer_ages: BTreeMap<Id, Age>,
     },
     /// Quadratic-shrinking phase.
     C {
         /// The number of rounds performed by the node while the rumor was in state B.
-        rounds_in_state_b: u8,
+        rounds_in_state_b: Round,
         /// The round number for this rumor while in state C.
-        round: u8,
+        round: Round,
     },
     /// Propagation complete.
     D,
@@ -39,34 +39,34 @@ pub enum RumorState {
 
 impl RumorState {
     /// Construct a new `RumorState` where we're the initial node for the rumor.  We start in
-    /// state B with `our_age` set to `1`.
+    /// state B with `rumor_age` set to `1`.
     pub fn new() -> Self {
         RumorState::B {
-            round: 0,
-            our_age: 1,
+            round: Round::from(0),
+            rumor_age: Age::from(1),
             peer_ages: BTreeMap::new(),
         }
     }
 
     /// Construct a new `RumorState` where we've received the rumor from a peer.  If that peer
-    /// is in state B (`age < max_b_age`) we start in state B with `our_age` set to `1`.
+    /// is in state B (`age < max_b_age`) we start in state B with `rumor_age` set to `1`.
     /// If the peer is in state C, we start in state C too.
-    pub fn new_from_peer(age: u8, max_b_age: u8) -> Self {
+    pub fn new_from_peer(age: Age, max_b_age: Age) -> Self {
         if age < max_b_age {
             return RumorState::B {
-                round: 0,
-                our_age: 1,
+                round: Round::from(0),
+                rumor_age: Age::from(1),
                 peer_ages: BTreeMap::new(),
             };
         }
         RumorState::C {
-            rounds_in_state_b: 0,
-            round: 0,
+            rounds_in_state_b: Round::from(0),
+            round: Round::from(0),
         }
     }
 
     /// Receive a copy of this rumor from `peer_id` with `age`.
-    pub fn receive(&mut self, peer_id: Id, age: u8) {
+    pub fn receive(&mut self, peer_id: Id, age: Age) {
         if let RumorState::B {
             ref mut peer_ages, ..
         } = *self
@@ -80,18 +80,18 @@ impl RumorState {
     /// Increment `round` value, consuming `self` and returning the new state.
     pub fn next_round(
         self,
-        max_b_age: u8,
-        max_c_rounds: u8,
-        max_rounds: u8,
+        max_b_age: Age,
+        max_c_rounds: Round,
+        max_rounds: Round,
         peers_in_this_round: &BTreeSet<Id>,
     ) -> RumorState {
         match self {
             RumorState::B {
                 mut round,
-                mut our_age,
+                mut rumor_age,
                 mut peer_ages,
             } => {
-                round += 1;
+                round += Round::from(1);
                 // If we've hit the maximum permitted number of rounds, transition to state D
                 if round >= max_rounds {
                     return RumorState::D;
@@ -102,7 +102,7 @@ impl RumorState {
                 // the rumor).
                 for peer in peers_in_this_round {
                     if let Entry::Vacant(entry) = peer_ages.entry(*peer) {
-                        let _ = entry.insert(0);
+                        let _ = entry.insert(Age::from(0));
                     }
                 }
 
@@ -111,32 +111,32 @@ impl RumorState {
                 let mut less = 0;
                 let mut greater_or_equal = 0;
                 for peer_age in peer_ages.values() {
-                    if *peer_age < our_age {
+                    if *peer_age < rumor_age {
                         less += 1;
                     } else if *peer_age >= max_b_age {
                         return RumorState::C {
                             rounds_in_state_b: round,
-                            round: 0,
+                            round: Round::from(0),
                         };
                     } else {
                         greater_or_equal += 1;
                     }
                 }
                 if greater_or_equal > less {
-                    our_age += 1;
+                    rumor_age += Age::from(1);
                 }
 
                 // If our age has reached `max_b_age`, transition to state C, otherwise remain
                 // in state B.
-                if our_age >= max_b_age {
+                if rumor_age >= max_b_age {
                     return RumorState::C {
                         rounds_in_state_b: round,
-                        round: 0,
+                        round: Round::from(0),
                     };
                 }
                 RumorState::B {
                     round,
-                    our_age,
+                    rumor_age,
                     peer_ages: BTreeMap::new(),
                 }
             }
@@ -144,7 +144,7 @@ impl RumorState {
                 rounds_in_state_b,
                 mut round,
             } => {
-                round += 1;
+                round += Round::from(1);
                 // If we've hit the maximum permitted number of rounds, transition to state D
                 if round + rounds_in_state_b >= max_rounds {
                     return RumorState::D;
@@ -167,11 +167,57 @@ impl RumorState {
 
     /// We only need to push and pull this rumor if we're in states B or C, hence this returns
     /// `None` if we're in state D.  State C is indicated by returning a value > `max_b_age`.
-    pub fn our_age(&self) -> Option<u8> {
+    pub fn rumor_age(&self) -> Option<Age> {
         match *self {
-            RumorState::B { our_age, .. } => Some(our_age),
-            RumorState::C { .. } => Some(u8::max_value()),
+            RumorState::B { rumor_age, .. } => Some(rumor_age),
+            RumorState::C { .. } => Some(Age::max()),
             RumorState::D => None,
         }
+    }
+}
+
+#[derive(Copy, Clone, Serialize, Debug, Deserialize, PartialEq, PartialOrd)]
+pub struct Age {
+    pub value: u8,
+}
+
+impl Age {
+    pub fn from(value: u8) -> Self {
+        Self { value }
+    }
+    pub fn max() -> Self {
+        Self {
+            value: u8::max_value(),
+        }
+    }
+}
+
+impl std::ops::AddAssign for Age {
+    fn add_assign(&mut self, rhs: Self) {
+        self.value += rhs.value;
+    }
+}
+
+#[derive(Default, Copy, Clone, Serialize, Debug, Deserialize, PartialEq, PartialOrd)]
+pub struct Round {
+    pub value: u8,
+}
+
+impl Round {
+    pub fn from(value: u8) -> Self {
+        Self { value }
+    }
+}
+
+impl std::ops::Add for Round {
+    type Output = Round;
+    fn add(self, rhs: Self) -> Round {
+        Round::from(self.value + rhs.value)
+    }
+}
+
+impl std::ops::AddAssign for Round {
+    fn add_assign(&mut self, rhs: Self) {
+        self.value += rhs.value;
     }
 }
