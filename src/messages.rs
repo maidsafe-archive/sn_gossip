@@ -7,8 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use super::gossip::Rumor;
 use crate::error::Error;
-use crate::rumor_state::Age;
 use bincode::{deserialize, serialize};
 use ed25519_dalek::{Keypair, PublicKey, Signature};
 #[cfg(not(test))]
@@ -20,13 +20,13 @@ pub struct Message(pub Vec<u8>, pub Signature);
 
 #[cfg(not(test))]
 impl Message {
-    pub fn serialise(request: &GossipType, keys: &Keypair) -> Result<Vec<u8>, Error> {
-        let serialised_msg = serialize(request)?;
+    pub fn serialise(gossip: &Gossip, keys: &Keypair) -> Result<Vec<u8>, Error> {
+        let serialised_msg = serialize(gossip)?;
         let sig: Signature = keys.sign::<Sha3_512>(&serialised_msg);
         Ok(serialize(&Message(serialised_msg, sig))?)
     }
 
-    pub fn deserialise(serialised_msg: &[u8], key: &PublicKey) -> Result<GossipType, Error> {
+    pub fn deserialise(serialised_msg: &[u8], key: &PublicKey) -> Result<Gossip, Error> {
         let msg: Message = deserialize(serialised_msg)?;
         if key.verify::<Sha3_512>(&msg.0, &msg.1).is_ok() {
             Ok(deserialize(&msg.0)?)
@@ -38,20 +38,20 @@ impl Message {
 
 #[cfg(test)]
 impl Message {
-    pub fn serialise(request: &GossipType, _keys: &Keypair) -> Result<Vec<u8>, Error> {
-        Ok(serialize(request)?)
+    pub fn serialise(gossip: &Gossip, _keys: &Keypair) -> Result<Vec<u8>, Error> {
+        Ok(serialize(gossip)?)
     }
 
-    pub fn deserialise(serialised_msg: &[u8], _key: &PublicKey) -> Result<GossipType, Error> {
+    pub fn deserialise(serialised_msg: &[u8], _key: &PublicKey) -> Result<Gossip, Error> {
         Ok(deserialize(serialised_msg)?)
     }
 }
 
-/// Gossip requests
+/// Gossip with rumors
 #[derive(Debug, Serialize, Deserialize)]
-pub enum GossipType {
-    /// Sent from Node A to Node B to push a rumor and its age.
-    Push { msg: Vec<u8>, age: Age },
+pub enum Gossip {
+    /// Sent from Node A to Node B to push a rumor.
+    Push(Vec<Rumor>),
     /// Sent from Node B to Node A as a reaction to receiving a push rumor from A.
-    Pull { msg: Vec<u8>, age: Age },
+    Pull(Vec<Rumor>),
 }

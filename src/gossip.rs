@@ -8,7 +8,7 @@
 // Software.
 
 use crate::id::Id;
-use crate::messages::GossipType;
+use crate::messages::Gossip;
 use crate::rumor_state::RumorState;
 use crate::rumor_state::{Age, Round};
 use std::collections::btree_map::Entry;
@@ -16,9 +16,27 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::{cmp, mem, u64};
 
-/// Gossip protocol handler.
-pub struct Gossip {
-    rumors: BTreeMap<Vec<u8>, RumorState>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Content(pub Vec<u8>);
+
+#[derive(Debug, Ord, Eq, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
+pub struct ContentHash(pub Vec<u8>);
+impl ContentHash {
+    fn from(content: Content) -> Self {
+        // todo
+        Self(content.0)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rumor {
+    pub content: Content,
+    pub state: RumorState,
+}
+
+/// The gossip state of a node instance.
+pub struct GossipState {
+    rumors: BTreeMap<ContentHash, Rumor>,
     network_size: f64,
     // When in state B, if our age for a Rumor is incremented to this value, the state
     // transitions to C.  Specified in the paper as `O(ln ln n)`.
@@ -36,9 +54,9 @@ pub struct Gossip {
     statistics: Statistics,
 }
 
-impl Gossip {
+impl GossipState {
     pub fn new() -> Self {
-        Gossip {
+        GossipState {
             rumors: BTreeMap::new(),
             network_size: 1.0,
             max_b_age: Age::from(0),
@@ -56,89 +74,101 @@ impl Gossip {
         self.max_rounds = Round::from(cmp::max(1, self.network_size.ln().ceil() as u8));
     }
 
-    pub fn rumors(&self) -> Vec<Vec<u8>> {
-        self.rumors.keys().cloned().collect()
+    pub fn rumors(&self) -> Vec<Rumor> {
+        self.rumors.values().cloned().collect()
     }
 
     /// Start gossiping a new rumor from this node.
-    pub fn initiate_rumor(&mut self, msg: Vec<u8>) {
-        if self.rumors.insert(msg, RumorState::new()).is_some() {
+    pub fn initiate_rumor(&mut self, content: Content) {
+        if self
+            .rumors
+            .insert(
+                ContentHash::from(content.clone()),
+                Rumor {
+                    content,
+                    state: RumorState::new(),
+                },
+            )
+            .is_some()
+        {
             error!("New rumors should be unique.");
         }
     }
 
-    /// Trigger the end of this round.  Returns a list of Push requests to be sent to a single random
+    /// Trigger the end of this round.  Returns a list of Push gossips to be sent to a single random
     /// peer during this new round.
-    pub fn next_round(&mut self) -> Vec<GossipType> {
+    pub fn next_round(&mut self) -> Option<Gossip> {
         self.statistics.rounds += 1;
-        let mut push_list = vec![];
+        let mut rumors_to_push = vec![];
         let rumors = mem::replace(&mut self.rumors, BTreeMap::new());
         self.rumors = rumors
             .into_iter()
-            .map(|(rumor, state)| {
-                let new_state = state.next_round(
+            .map(|(hash, mut rumor)| {
+                rumor.state = rumor.state.next_round(
                     self.max_b_age,
                     self.max_c_rounds,
                     self.max_rounds,
                     &self.peers_in_this_round,
                 );
                 // Filter out any for which `rumor_age()` is `None`.
-                if let Some(age) = new_state.rumor_age() {
-                    push_list.push(GossipType::Push {
-                        msg: rumor.clone(),
-                        age,
-                    });
+                if rumor.state.rumor_age().is_some() {
+                    rumors_to_push.push(rumor.clone());
                 }
-                (rumor, new_state)
+                (hash, rumor)
             })
             .collect();
         self.peers_in_this_round.clear();
-        self.statistics.sent_rumors += push_list.len() as u64;
-        push_list
+        self.statistics.sent_rumors += rumors_to_push.len() as u64;
+        if !rumors_to_push.is_empty() {
+            Some(Gossip::Push(rumors_to_push))
+        } else {
+            None
+        }
     }
 
-    /// We've received `request` from `peer_id`.  If this is a Push request and we've not already heard from
-    /// `peer_id` in this round, this returns the list of Pull requests which should be sent back to
+    /// We've received `gossip` from `peer_id`.  If this is a Push gossip and we've not already heard from
+    /// `peer_id` in this round, this returns the list of Pull gossips which should be sent back to
     /// `peer_id`.
-    pub fn receive(&mut self, peer_id: Id, request: GossipType) -> Vec<GossipType> {
-        let (is_push, rumor, age) = match request {
-            GossipType::Push { msg, age } => (true, msg, age),
-            GossipType::Pull { msg, age } => (false, msg, age),
+    pub fn receive(&mut self, peer_id: Id, gossip: Gossip) -> Option<Gossip> {
+        let (is_push, received_rumors) = match gossip {
+            Gossip::Push(received_rumors) => (true, received_rumors),
+            Gossip::Pull(received_rumors) => (false, received_rumors),
         };
 
         // Collect any responses required.
         let is_new_this_round = self.peers_in_this_round.insert(peer_id);
-        let responses = if is_new_this_round && is_push {
-            let responses: Vec<GossipType> = self
+        let response = if is_new_this_round && is_push {
+            let response_rumors: Vec<Rumor> = self
                 .rumors
                 .iter()
-                .filter_map(|(rumor, state)| {
+                .filter_map(|(_, rumor)| {
                     // Filter out any for which `rumor_age()` is `None`.
-                    state.rumor_age().map(|age| GossipType::Pull {
-                        msg: rumor.clone(),
-                        age,
-                    })
+                    rumor.state.rumor_age().map(|_| rumor.clone())
                 })
                 .collect();
-            self.statistics.sent_rumors += responses.len() as u64;
-            responses
+            self.statistics.sent_rumors += response_rumors.len() as u64;
+            let response_gossip = Gossip::Pull(response_rumors);
+            Some(response_gossip)
         } else {
-            vec![]
+            None
         };
 
-        // Empty Push & Pull shall not be inserted into cache.
-        if !(rumor.is_empty() && age == Age::from(0)) {
+        for rumor in received_rumors {
             self.statistics.received_rumors += 1;
             // Add or update the entry for this rumor.
-            match self.rumors.entry(rumor) {
-                Entry::Occupied(mut entry) => entry.get_mut().receive(peer_id, age),
+            let age = rumor.state.rumor_age().unwrap_or_else(Age::max);
+            match self.rumors.entry(ContentHash::from(rumor.content.clone())) {
+                Entry::Occupied(mut entry) => entry.get_mut().state.receive(peer_id, age),
                 Entry::Vacant(entry) => {
-                    let _ = entry.insert(RumorState::new_from_peer(age, self.max_b_age));
+                    let _ = entry.insert(Rumor {
+                        content: rumor.content,
+                        state: RumorState::new_from_peer(age, self.max_b_age),
+                    });
                 }
             }
         }
 
-        responses
+        response
     }
 
     #[cfg(test)]
@@ -155,14 +185,18 @@ impl Gossip {
     }
 }
 
-impl Debug for Gossip {
+impl Debug for GossipState {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        write!(formatter, "Gossip {{ rumors: {{ ")?;
-        for (rumor, state) in &self.rumors {
+        write!(formatter, "GossipState {{ rumors: {{ ")?;
+        for rumor in (&self.rumors).values() {
             write!(
                 formatter,
                 "{:02x}{:02x}{:02x}{:02x}: {:?}, ",
-                rumor[0], rumor[1], rumor[2], rumor[3], state
+                rumor.content.0[0],
+                rumor.content.0[1],
+                rumor.content.0[2],
+                rumor.content.0[3],
+                rumor.state
             )?;
         }
         write!(formatter, "}}, network_size: {}, ", self.network_size)?;

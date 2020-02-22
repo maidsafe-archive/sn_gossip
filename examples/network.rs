@@ -232,12 +232,10 @@ impl TestNode {
     fn tick(&mut self) {
         if !self.is_in_round {
             self.is_in_round = true;
-
-            let (peer_id, msgs_to_send) = unwrap!(self.node.next_round());
-            if let Some(message_stream) = self.peers.get_mut(&peer_id) {
-                // Buffer the messages to be sent.
-                for msg in msgs_to_send {
-                    message_stream.buffer(&msg);
+            if let Ok((peer_id, Some(gossip_to_send))) = self.node.next_round() {
+                if let Some(message_stream) = self.peers.get_mut(&peer_id) {
+                    // Buffer the gossip to be sent.
+                    message_stream.buffer(&gossip_to_send);
                 }
             }
         }
@@ -252,9 +250,9 @@ impl TestNode {
             loop {
                 match message_stream.poll() {
                     Ok(Async::Ready(Some(message))) => {
-                        let msgs_to_send = self.node.receive_rumor(peer_id, &message);
+                        let msgs_to_send = self.node.receive_gossip(peer_id, &message);
                         // Buffer the messages to be sent back.
-                        for msg in msgs_to_send {
+                        if let Some(msg) = msgs_to_send {
                             has_response = true;
                             message_stream.buffer(&msg);
                         }
@@ -311,7 +309,7 @@ impl Future for TestNode {
             .node
             .rumors()
             .into_iter()
-            .map(|serialised| unwrap!(deserialize::<String>(&serialised)))
+            .map(|rumor| unwrap!(deserialize::<String>(&rumor.content.0)))
             .collect_vec();
         let id = self.id();
         unwrap!(self.stats_sender.unbounded_send((id, rumors, stats)));

@@ -12,7 +12,7 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// This represents the state of a single rumor from this node's perspective.
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RumorState {
     /// Exponential-growth phase.
     B {
@@ -35,6 +35,12 @@ pub enum RumorState {
     },
     /// Propagation complete.
     D,
+}
+
+impl Default for RumorState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RumorState {

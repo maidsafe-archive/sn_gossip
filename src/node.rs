@@ -7,8 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use super::gossip::{Gossip, Statistics};
-use super::messages::{GossipType, Message};
+use super::gossip::{Content, GossipState, Rumor, Statistics};
+use super::messages::{Gossip, Message};
 use crate::error::Error;
 use crate::id::Id;
 use bincode::serialize;
@@ -22,7 +22,7 @@ use std::fmt::{self, Debug, Formatter};
 pub struct Node {
     keys: Keypair,
     peers: Vec<Id>,
-    gossip: Gossip,
+    gossip: GossipState,
 }
 
 impl Node {
@@ -48,51 +48,57 @@ impl Node {
         if self.peers.is_empty() {
             return Err(Error::NoPeers);
         }
-        self.gossip.initiate_rumor(serialize(rumor)?);
+        self.gossip.initiate_rumor(Content(serialize(rumor)?));
         Ok(())
     }
 
-    /// Start a new round.  Returns a vector of Push requests with rumors to be sent to the given peer.
+    /// Start a new round.  Returns a Push gossip with rumors to be sent to the given peer.
     ///
-    /// These should all be given to just a single peer to avoid triggering a flood of Pull requests in
-    /// response.  For example, if we have 100 Push requests to send here and we send them all to a
-    /// single peer, we only receive a single tranche of Pull requests in responses (the tranche
-    /// comprising several rumors).  However, if we send each Push request to a different peer, we'd
-    /// receive 100 tranches of Pull requests.
-    pub fn next_round(&mut self) -> Result<(Id, Vec<Vec<u8>>), Error> {
+    /// These should all be given to just a single peer to avoid triggering a flood of Pull gossips in
+    /// response.  For example, if we have 100 Push gossips to send here and we send them all to a
+    /// single peer, we only receive a single tranche of Pull gossips in responses (the tranche
+    /// comprising several rumors).  However, if we send each Push gossip to a different peer, we'd
+    /// receive 100 tranches of Pull gossips.
+    pub fn next_round(&mut self) -> Result<(Id, Option<Vec<u8>>), Error> {
         let mut rng = rand::thread_rng();
         let peer_id = match self.peers.choose(&mut rng) {
             Some(id) => *id,
             None => return Err(Error::NoPeers),
         };
-        let push_list = self.gossip.next_round();
-        let rumors = self.prepare_to_send(push_list);
-        debug!("{:?} Sending Push rumors to {:?}", self, peer_id);
-        Ok((peer_id, rumors))
+        if let Some(gossip) = self.gossip.next_round() {
+            let serialized = self.serialise(gossip);
+            debug!("{:?} Sending Push gossip to {:?}", self, peer_id);
+            Ok((peer_id, Some(serialized)))
+        } else {
+            Ok((peer_id, None))
+        }
     }
 
-    /// Handles an incoming rumor from peer.
-    pub fn receive_rumor(&mut self, peer_id: &Id, serialised_rumor: &[u8]) -> Vec<Vec<u8>> {
-        debug!("{:?} handling rumor from {:?}", self, peer_id);
+    /// Handles incoming gossip from peer.
+    pub fn receive_gossip(&mut self, peer_id: &Id, serialised_gossip: &[u8]) -> Option<Vec<u8>> {
+        debug!("{:?} handling gossip from {:?}", self, peer_id);
         let pub_key = if let Ok(pub_key) = PublicKey::from_bytes(&peer_id.0) {
             pub_key
         } else {
-            return Vec::new();
+            return None;
         };
-        let request = if let Ok(request) = Message::deserialise(serialised_rumor, &pub_key) {
-            request
+        let gossip = if let Ok(gossip) = Message::deserialise(serialised_gossip, &pub_key) {
+            gossip
         } else {
-            error!("Failed to deserialise rumor");
-            return Vec::new();
+            error!("Failed to deserialise gossip");
+            return None;
         };
-        // If this request is a Push from a peer we've not already heard from in this round, there could
-        // be a set of Pull responses to be sent back to that peer.
-        let responses = self.gossip.receive(*peer_id, request);
-        self.prepare_to_send(responses)
+        // If this gossip is a Push from a peer we've not already heard from in this round, there could
+        // be a Pull response to send back to that peer.
+        if let Some(response) = self.gossip.receive(*peer_id, gossip) {
+            Some(self.serialise(response))
+        } else {
+            None
+        }
     }
 
     /// Returns the list of rumors this node is informed about so far.
-    pub fn rumors(&self) -> Vec<Vec<u8>> {
+    pub fn rumors(&self) -> Vec<Rumor> {
         self.gossip.rumors()
     }
 
@@ -107,16 +113,13 @@ impl Node {
         self.gossip.clear();
     }
 
-    fn prepare_to_send(&mut self, requests: Vec<GossipType>) -> Vec<Vec<u8>> {
-        let mut rumors = vec![];
-        for request in requests {
-            if let Ok(serialised_msg) = Message::serialise(&request, &self.keys) {
-                rumors.push(serialised_msg);
-            } else {
-                error!("Failed to serialise {:?}", request);
-            }
+    fn serialise(&mut self, gossip: Gossip) -> Vec<u8> {
+        if let Ok(serialised_msg) = Message::serialise(&gossip, &self.keys) {
+            return serialised_msg;
+        } else {
+            error!("Failed to serialise {:?}", gossip);
         }
-        rumors
+        vec![]
     }
 }
 
@@ -127,7 +130,7 @@ impl Default for Node {
         Node {
             keys,
             peers: vec![],
-            gossip: Gossip::new(),
+            gossip: GossipState::new(),
         }
     }
 }
@@ -141,7 +144,6 @@ impl Debug for Node {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rumor_state::Age;
     use itertools::Itertools;
     use rand::seq::SliceRandom;
     use rand::{self, Rng};
@@ -167,15 +169,6 @@ mod tests {
 
     fn send_rumors(nodes: &mut Vec<Node>, num_of_msgs: u32) -> (u64, u64, Statistics) {
         let mut rng = rand::thread_rng();
-        let empty_request_len = unwrap!(Message::serialise(
-            &GossipType::Push {
-                msg: vec![],
-                age: Age::from(0),
-            },
-            &nodes[0].keys,
-        ))
-        .len();
-
         let mut rumors: Vec<String> = Vec::new();
         for _ in 0..num_of_msgs {
             let mut raw = [0u8; 20];
@@ -195,38 +188,26 @@ mod tests {
         let mut processed = true;
         while processed {
             processed = false;
-            let mut to_push = BTreeMap::new();
-            // Call `next_round()` on each node to gather a list of all Push requests.
+            let mut gossips_to_push = BTreeMap::new();
+            // Call `next_round()` on each node to gather a list of all Push gossips.
             for node in nodes.iter_mut() {
                 if !rumors.is_empty() && rng.gen() {
                     let rumor = unwrap!(rumors.pop());
                     let _ = node.initiate_rumor(&rumor);
                 }
-                let (dst_id, push_msgs) = unwrap!(node.next_round());
-                // Any non-empty Push request will have a length more than `empty_request_len`.
-                if push_msgs.iter().any(|msg| msg.len() > empty_request_len) {
+                if let Ok((dst_id, Some(push_gossip))) = node.next_round() {
                     processed = true;
+                    let _ = gossips_to_push.insert((node.id(), dst_id), push_gossip);
                 }
-                let _ = to_push.insert((node.id(), dst_id), push_msgs);
             }
 
-            // Send all Push requests and the corresponding Pull requests.
-            for ((src_id, dst_id), push_msgs) in to_push {
-                let mut pull_msgs = vec![];
-                {
-                    let dst = unwrap!(nodes.iter_mut().find(|node| node.id() == dst_id));
-                    // Only the first Push from this peer should return any Pulls.
-                    for (index, push_msg) in push_msgs.into_iter().enumerate() {
-                        if index == 0 {
-                            pull_msgs = dst.receive_rumor(&src_id, &push_msg);
-                        } else {
-                            assert!(dst.receive_rumor(&src_id, &push_msg).is_empty());
-                        }
-                    }
-                }
+            // Send all Push gossips and the corresponding Pull gossips.
+            for ((src_id, dst_id), push_gossip) in gossips_to_push {
+                let dst = unwrap!(nodes.iter_mut().find(|node| node.id() == dst_id));
+                let pull_gossip = dst.receive_gossip(&src_id, &push_gossip);
                 let src = unwrap!(nodes.iter_mut().find(|node| node.id() == src_id));
-                for pull_msg in pull_msgs {
-                    assert!(src.receive_rumor(&dst_id, &pull_msg).is_empty());
+                if let Some(gossip) = pull_gossip {
+                    assert!(src.receive_gossip(&dst_id, &gossip).is_none());
                 }
             }
         }
@@ -396,7 +377,7 @@ mod tests {
     }
 
     fn prove_of_stop(num_nodes: u32, num_msgs: u32) -> (usize, usize) {
-        let mut gossipers = create_network(num_nodes);
+        let mut nodes = create_network(num_nodes);
         let mut rng = rand::thread_rng();
         let mut rumors: Vec<String> = Vec::new();
         for _ in 0..num_msgs {
@@ -411,45 +392,34 @@ mod tests {
         while processed {
             rounds += 1;
             processed = false;
-            let mut messages = BTreeMap::new();
-            // Call `next_round()` on each node to gather a list of all Push requests.
-            for gossiper in gossipers.iter_mut() {
+            let mut gossips_to_push = BTreeMap::new();
+            // Call `next_round()` on each node to gather a list of all Push gossips.
+            for node in nodes.iter_mut() {
                 if !rumors.is_empty() && rng.gen() {
                     let rumor = unwrap!(rumors.pop());
-                    let _ = gossiper.initiate_rumor(&rumor);
+                    let _ = node.initiate_rumor(&rumor);
                 }
-                let (dst_id, push_msgs) = unwrap!(gossiper.next_round());
-                if !push_msgs.is_empty() {
+                if let Ok((dst_id, Some(push_gossip))) = node.next_round() {
                     processed = true;
+                    let _ = gossips_to_push.insert((node.id(), dst_id), push_gossip);
                 }
-                let _ = messages.insert((gossiper.id(), dst_id), push_msgs);
             }
 
-            // Send all Push requests and the corresponding Pull requests.
-            for ((src_id, dst_id), push_msgs) in messages {
-                let mut pull_msgs = vec![];
-                {
-                    let dst = unwrap!(gossipers.iter_mut().find(|node| node.id() == dst_id));
-                    // Only the first Push from this peer should return any Pulls.
-                    for (index, push_msg) in push_msgs.into_iter().enumerate() {
-                        if index == 0 {
-                            pull_msgs = dst.receive_rumor(&src_id, &push_msg);
-                        } else {
-                            assert!(dst.receive_rumor(&src_id, &push_msg).is_empty());
-                        }
-                    }
-                }
-                let src = unwrap!(gossipers.iter_mut().find(|node| node.id() == src_id));
-                for pull_msg in pull_msgs {
-                    assert!(src.receive_rumor(&dst_id, &pull_msg).is_empty());
+            // Send all Push gossips and the corresponding Pull gossips.
+            for ((src_id, dst_id), push_gossip) in gossips_to_push {
+                let dst = unwrap!(nodes.iter_mut().find(|node| node.id() == dst_id));
+                let pull_msgs = dst.receive_gossip(&src_id, &push_gossip);
+                let src = unwrap!(nodes.iter_mut().find(|node| node.id() == src_id));
+                if let Some(pull_msg) = pull_msgs {
+                    assert!(src.receive_gossip(&dst_id, &pull_msg).is_none());
                 }
             }
         }
 
         let mut nodes_missed = 0;
         // Checking if nodes missed the rumor.
-        for gossiper in gossipers.iter() {
-            if gossiper.rumors().len() as u32 != num_msgs {
+        for node in nodes.iter() {
+            if node.rumors().len() as u32 != num_msgs {
                 nodes_missed += 1;
             }
         }

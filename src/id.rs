@@ -12,7 +12,7 @@ use std::convert::From;
 use std::fmt::{self, Debug, Formatter};
 
 /// The ID of a node - equivalent to its public key.
-#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Id(pub [u8; PUBLIC_KEY_LENGTH]);
 
 impl From<PublicKey> for Id {
