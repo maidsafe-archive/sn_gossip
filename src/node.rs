@@ -12,10 +12,10 @@ use super::messages::{Gossip, Message};
 use crate::error::Error;
 use crate::id::Id;
 use bincode::serialize;
-use ed25519_dalek::{Keypair, PublicKey};
+use ed25519::{Keypair, PublicKey};
 use rand::seq::SliceRandom;
+use rand_core::OsRng;
 use serde::ser::Serialize;
-use sha3::Sha3_512;
 use std::fmt::{self, Debug, Formatter};
 
 /// An entity on the network which will gossip rumors.
@@ -125,8 +125,7 @@ impl Node {
 
 impl Default for Node {
     fn default() -> Self {
-        let mut rng = rand::thread_rng();
-        let keys = Keypair::generate::<Sha3_512, _>(&mut rng);
+        let keys = Keypair::generate(&mut OsRng);
         Node {
             keys,
             peers: vec![],
