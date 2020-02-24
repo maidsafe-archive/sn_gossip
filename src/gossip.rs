@@ -15,16 +15,21 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::{cmp, mem, u64};
+use tiny_keccak::{Hasher, Sha3};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Content(pub Vec<u8>);
 
-#[derive(Debug, Ord, Eq, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
-pub struct ContentHash(pub Vec<u8>);
-impl ContentHash {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ContentHash(pub [u8; 32]);
+
+impl From<Content> for ContentHash {
     fn from(content: Content) -> Self {
-        // todo
-        Self(content.0)
+        let mut hasher = Sha3::v256();
+        let mut out = [0u8; 32];
+        hasher.update(content.0.as_slice());
+        hasher.finalize(&mut out);
+        Self(out)
     }
 }
 
