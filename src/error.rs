@@ -7,7 +7,6 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use bincode;
 use err_derive::Error;
 
 /// Node error variants.
