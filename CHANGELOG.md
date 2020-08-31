@@ -1,4 +1,4 @@
-# safe_gossip - Change Log
+# sn_gossip - Change Log
 
 ## [0.1.0]
 

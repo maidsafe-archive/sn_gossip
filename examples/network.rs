@@ -64,7 +64,7 @@ use futures_cpupool::{CpuFuture, CpuPool};
 use itertools::Itertools;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use safe_gossip::{Error, Id, Node, Statistics};
+use sn_gossip::{Error, Id, Node, Statistics};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
