@@ -1,4 +1,4 @@
-# safe-gossip
+# sn_gossip
 
 An implementation of a push-pull gossip protocol described in [Randomized Rumor Spreading - Karp et al. [FOCS 2000]](http://zoo.cs.yale.edu/classes/cs426/2013/bib/karp00randomized.pdf).
 
