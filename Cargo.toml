@@ -1,17 +1,16 @@
 [package]
-authors = ["MaidSafe Developers <dev@maidsafe.net>"]
+authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 description = "An implementation of a push-pull gossip protocol."
 homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 name = "sn_gossip"
 readme = "README.md"
 repository = "https://github.com/maidsafe/sn_gossip"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2018"
 
 [dependencies]
 bytes = "~0.4.11"
-ed25519= { package = "tmp-ed25519", version = "1.0.0-pre.3", features = ["serde"] }
 futures = "~0.1.25"
 log = "~0.4.8"
 quick-error = "1.2.3"
@@ -22,11 +21,18 @@ bincode = "1.2.1"
 err-derive = "~0.2.2"
 rand = "~0.7.3"
 rand_core = "~0.5.1"
-tiny-keccak = { version = "2.0.0", features = ["sha3"] }
+
+  [dependencies.ed25519]
+  package = "tmp-ed25519"
+  version = "1.0.0-pre.3"
+  features = [ "serde" ]
+
+  [dependencies.tiny-keccak]
+  version = "2.0.0"
+  features = [ "sha3" ]
 
 [dev-dependencies]
 futures-cpupool = "~0.1.8"
 itertools = "~0.8.2"
 tokio = "~0.1.1"
 tokio-io = "~0.1.5"
-
